@@ -66,13 +66,15 @@ class Text extends AbstractRenderer
         $letter_spacing = $style->letter_spacing;
         $width = (float) $style->width;
 
+        $tag = $frame->get_tag();
+
         /*$text = str_replace(
           array("{PAGE_NUM}"),
           array($this->_canvas->get_page_number()),
           $text
         );*/
 
-        $this->_canvas->text($x, $y, $text,
+        $this->_canvas->text($x, $y, $text, $tag,
             $font, $size,
             $style->color, $word_spacing, $letter_spacing);
 

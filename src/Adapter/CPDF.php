@@ -745,8 +745,9 @@ class CPDF implements Canvas
         $pdf->addFormField($ft, rand(), $x, $this->y($y) - $h, $x + $w, $this->y($y), $ff, $size, $color);
     }
 
-    public function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
+    public function text($x, $y, $text, $tag, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
     {
+        
         $pdf = $this->_pdf;
 
         $this->_set_fill_color($color);
@@ -754,7 +755,7 @@ class CPDF implements Canvas
         $is_font_subsetting = $this->_dompdf->getOptions()->getIsFontSubsettingEnabled();
         $pdf->selectFont($font, '', true, $is_font_subsetting);
 
-        $pdf->addText($x, $this->y($y) - $pdf->getFontHeight($size), $size, $text, $angle, $word_space, $char_space);
+        $pdf->addText($x, $this->y($y) - $pdf->getFontHeight($size), $size, $text, $tag, $angle, $word_space, $char_space);
 
         $this->_set_fill_transparency("Normal", $this->_current_opacity);
     }

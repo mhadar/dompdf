@@ -301,6 +301,11 @@ abstract class AbstractFrameDecorator extends Frame
         return $this->_frame->get_node();
     }
 
+    function get_tag()
+    {
+        return $this->_frame->get_tag();
+    }
+
     function get_style()
     {
         return $this->_frame->get_style();

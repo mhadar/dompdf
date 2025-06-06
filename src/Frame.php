@@ -26,6 +26,13 @@ class Frame
     const WS_SPACE = 2;
 
     /**
+     * The HTML tag name
+     *
+     * @var string|null
+     */
+    protected $_tag;
+
+    /**
      * The DOMElement or DOMText object this frame represents
      *
      * @var \DOMElement|\DOMText
@@ -156,6 +163,11 @@ class Frame
     public function __construct(\DOMNode $node)
     {
         $this->_node = $node;
+        $this->_tag = null;
+
+        if($this->get_node()->nodeName === '#text' && $node->parentNode) {
+            $this->_tag = $node->parentNode->nodeName;
+        }
 
         $this->_parent = null;
         $this->_first_child = null;
@@ -293,6 +305,14 @@ class Frame
         $this->_containing_block["h"] = null;
 
         $this->_style->reset();
+    }
+
+    /**
+     * @return string|null
+     */
+    public function get_tag()
+    {
+        return $this->_tag;
     }
 
     /**

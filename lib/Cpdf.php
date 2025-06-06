@@ -45,6 +45,21 @@ class Cpdf
     public $numObj = 0;
 
     /**
+     * @var integer The current number of structure element in current page
+     */
+    public $numStructElem = 0;
+
+    /**
+     * @var array List of structure elements
+     */
+    public $structElems = [];
+
+    /**
+     * @var array List of outline elements
+     */
+    public $outlineElems = [];
+
+    /**
      * @var array This array contains all of the pdf objects, ready for final assembly
      */
     public $objects = [];
@@ -53,6 +68,31 @@ class Cpdf
      * @var integer The objectId (number within the objects array) of the document catalog
      */
     public $catalogId;
+    
+    /**
+     * @var integer The objectId (number within the objects array) of the document element
+     */
+    public $documentId;
+
+    /**
+     * @var integer The objectId (number within the objects array) of the document StructTreeRoot
+     */
+    public $structTreeRootId;
+
+    /**
+     * @var integer The objectId (number within the objects array) of the document Outlines
+     */
+    public $outlinesId;
+
+    /**
+     * @var integer The objectId (number within the objects array) of the current Outline Tree Id
+     */
+    public $currentOutlineId;
+
+    /**
+     * @var integer The objectId (number within the objects array) of the root Outline Tree Id
+     */
+    public $rootOutlineId;
 
     /**
      * @var integer The objectId (number within the objects array) of indirect references (Javascript EmbeddedFiles)
@@ -303,7 +343,7 @@ class Cpdf
     public $additionalXmpRdf = '';
 
     /**
-     * @var array Array which forms a stack to keep track of nested callback functions
+      * @var array Array which forms a stack to keep track of nested callback functions
      */
     public $callback = [];
 
@@ -625,6 +665,8 @@ class Cpdf
             case 'pages':
             case 'openHere':
             case 'names':
+            case 'structTreeRoot':
+
                 $o['info'][$action] = $options;
                 break;
 
@@ -732,7 +774,17 @@ class Cpdf
                             }
                             $res .= "\n]";
                             break;
+
+                        case 'structTreeRoot':
+                            $res .= "\n/StructTreeRoot " . $v . " 0 R";
+                            break;
+
                     }
+                }
+
+                if($this->pdfa) {
+                    $res .= "\n/MarkInfo << /Marked true >>";
+                    $res .= "\n/Lang (de-AT)";
                 }
 
                 $res .= " >>\nendobj";
@@ -911,22 +963,104 @@ class Cpdf
                 $this->o_catalog($this->catalogId, 'outlines', $id);
                 break;
 
+            case 'edit':
+                $this->objects[$id]['info'] = array_merge($this->objects[$id]['info'], $options);
+                break;
+
             case 'outline':
                 $o['info']['outlines'][] = $options;
                 break;
 
             case 'out':
                 if (count($o['info']['outlines'])) {
-                    $res = "\n$id 0 obj\n<< /Type /Outlines /Kids [";
+                    $res = "\n$id 0 obj\n<< /Type /Outlines";
+                    $res .= " /Kids [ ";
                     foreach ($o['info']['outlines'] as $v) {
                         $res .= "$v 0 R ";
                     }
+                    $res .= "] ";
+                    $res .= " /Count " . count($o['info']['outlines']);
+                    if(isset($o['info']['first'])) {
+                        $res .= " /First " . $o['info']['first'] . " 0 R";
+                    }
+                    if(isset($o['info']['last'])) {
+                        $res .= " /Last " . $o['info']['last'] . " 0 R";
+                    }
+                    $res .= " >>\nendobj";
 
-                    $res .= "] /Count " . count($o['info']['outlines']) . " >>\nendobj";
                 } else {
                     $res = "\n$id 0 obj\n<< /Type /Outlines /Count 0 >>\nendobj";
                 }
 
+                return $res;
+        }
+
+        return null;
+    }
+
+    /**
+     * define the outline
+     *
+     * @param $id
+     * @param $action
+     * @param string $options
+     * @return string|null
+     */
+    protected function o_outline($id, $action, $options = '')
+    {
+        if ($action !== 'new') {
+            $o = &$this->objects[$id];
+        }
+
+        switch ($action) {
+            case 'new':
+                $id = ++$this->numObj;
+                $this->objects[$id] = ['t' => 'outline', 'info' => $options];
+                break;
+
+            case 'edit':
+                $this->objects[$id]['info'] = array_merge($this->objects[$id]['info'], $options);
+                break;
+
+            case 'outline':
+                $o['info']['outlines'][] = $options;
+                break;
+
+            case 'out':
+
+                $info = $this->objects[$id]['info'];
+                $res = "\n$id 0 obj\n<<";
+                $res .= "/A <</D[ " . $info['page'] . " 0 R /XYZ " . $info['x'] . " " . $info['y'] . " 0]/S/GoTo/Type/Action>>";
+
+                if(count($info['outlines'])) {
+                    // $res .= " /Kids [ ";
+                    // foreach ($info['outlines'] as $v) {
+                    //     $res .= "$v 0 R ";
+                    // }
+                    // $res .= "] ";
+                    $res .= "/Count " . count($info['outlines']);
+                    $res .= "/First " . $info['outlines'][0] . " 0 R";
+                    $res .= "/Last " . $info['outlines'][count($info['outlines']) - 1] . " 0 R";
+                }
+                if(isset($info['parent'])) {
+                    $res .= "/Parent " . $info['parent'] . " 0 R";
+                    $parentOutlines = $this->objects[$info['parent']]['info']['outlines'];
+                    $childKey = array_search($id, $parentOutlines);
+                    if(isset($parentOutlines[$childKey - 1])) {
+                        $res .= "/Prev " . $parentOutlines[$childKey - 1] . " 0 R";
+                    }
+                    if(isset($parentOutlines[$childKey + 1])) {
+                        $res .= "/Next " . $parentOutlines[$childKey + 1] . " 0 R";
+                    }
+                }
+                // if(isset($info['prev'])) {
+                //     $res .= "/Prev " . $info['prev'] . " 0 R";
+                // }
+                // if(isset($info['next'])) {
+                //     $res .= "/Next " . $info['next'] . " 0 R";
+                // }
+                $res .= "/Title(" . $info['title'] . ")";
+                $res .= ">>\nendobj\n";
                 return $res;
         }
 
@@ -1140,14 +1274,14 @@ class Cpdf
 
         $this->addMessage('selectFont: checking for - ' . $fbfile);
 
-        if ($this->pdfa && !file_exists($fbfile)) {
-            throw new \Exception("A fully embeddable font must be used when generating a document in PDF/A mode");
-        } elseif (!$fileSuffix) {
+        if (!$fileSuffix) {
             $this->addMessage(
                 'selectFont: pfb or ttf file not found, ok if this is one of the 14 standard fonts'
             );
 
             return false;
+        } elseif ($this->pdfa && !file_exists($fbfile)) {
+            throw new \Exception("A fully embeddable font must be used when generating a document in PDF/A mode. $fbfile not found");
         } else {
             $adobeFontName = isset($font['PostScriptName']) ? $font['PostScriptName'] : $font['FontName'];
             //        $fontObj = $this->numObj;
@@ -2124,11 +2258,11 @@ EOT;
                         (isset($pagesInfo['extGStates']) && count($pagesInfo['extGStates']))
                     ) {
                         $res .= "\n/Resources <<";
-
+    
                         if (isset($pagesInfo['procset'])) {
                             $res .= "\n/ProcSet " . $pagesInfo['procset'] . " 0 R";
                         }
-
+    
                         if (isset($pagesInfo['fonts']) && count($pagesInfo['fonts'])) {
                             $res .= "\n/Font << ";
                             foreach ($pagesInfo['fonts'] as $finfo) {
@@ -2136,7 +2270,7 @@ EOT;
                             }
                             $res .= "\n>>";
                         }
-
+    
                         if (isset($pagesInfo['xObjects']) && count($pagesInfo['xObjects'])) {
                             $res .= "\n/XObject << ";
                             foreach ($pagesInfo['xObjects'] as $finfo) {
@@ -2144,7 +2278,7 @@ EOT;
                             }
                             $res .= "\n>>";
                         }
-
+    
                         if (isset($pagesInfo['extGStates']) && count($pagesInfo['extGStates'])) {
                             $res .= "\n/ExtGState << ";
                             foreach ($pagesInfo['extGStates'] as $gstate) {
@@ -2152,9 +2286,11 @@ EOT;
                             }
                             $res .= "\n>>";
                         }
-
+    
                         $res .= "\n>>";
                     }
+
+                    $res .= "\n/StructParents " . $o['info']['pageNum'] - 1;
                 }
 
                 $res .= "\n>>\nendobj";
@@ -3121,6 +3257,111 @@ EOT;
 
         return null;
     }
+    
+    protected function o_struct_tree_root($id, $action, $options = []): ?string
+    {
+        switch ($action) {
+            case 'new':
+                $id = ++$this->numObj;
+                $this->objects[$id] = ['t' => 'struct_tree_root', 'info' => $options];
+                break;
+
+            case 'edit':
+                $this->objects[$id]['info'] = $options;
+                break;
+
+            case 'out':
+                $info = &$this->objects[$id]['info'];
+                $res = '';
+                if (count($info) > 0) {
+                    $res = "\n$id 0 obj\n<</Type/StructTreeRoot";
+                    $res .= "/K " . $info['kids'] . " 0 R";
+                    $res .= "/ParentTree " . $info['parent'] . " 0 R";
+                    $res .= ">>\nendobj";
+                }
+                return $res;
+        }
+
+        return null;
+    }
+
+    protected function o_struct_elem($id, $action, $options = []): ?string
+    {
+        switch ($action) {
+            case 'new':
+                $id = ++$this->numObj;
+                $this->objects[$id] = ['t' => 'struct_elem', 'info' => $options];
+                break;
+
+            case 'edit':
+                $this->objects[$id]['info'] = $options;
+                break;
+
+            case 'out':
+                $info = &$this->objects[$id]['info'];
+                $res = '';
+                if (count($info) > 0) {
+                    $res = "\n$id 0 obj\n<</Type/StructElem";
+                    if(isset($info['page'])) {
+                        $res .= "/K<</Type/MCR/MCID " . $info['kids'] . "/Pg " . $info['page'] . " 0 R>>";
+                    } else {
+                        $res .= "/K " . $info['kids'];
+                    }
+                    if(isset($info['parent'])) {
+                        $res .= "/P " . $info['parent'] . " 0 R";
+                    }
+                    
+                    $res .= "/S/" . $info['tag'];
+
+                    // if(isset($info['tag'])) {
+                    //     $res .= "\n/ID<" . strtoupper(bin2hex(isset($info['text']) ? $info['tag'] . '_' . substr($info['text'], 0, 10) : $info['tag'])) . ">";
+                    // }
+
+                    $res .= ">>\nendobj";
+                    // $res = "\n$id 0 obj\n<< /Type /StructElem";
+                    // $res .= "\n/S /" . $info['tag'];
+                    // if(isset($info['page'])) {
+                    //     $res .= "\n/Pg " . $info['page'] . " 0 R";
+                    // }
+                    // $res .= "\n/K " . $info['kids'];
+                    // $res .= ">>\nendobj";
+                }
+                return $res;
+        }
+
+        return null;
+    }
+
+    protected function o_nums($id, $action, $options = []): ?string
+    {
+        switch ($action) {
+            case 'new':
+                $id = ++$this->numObj;
+                $this->objects[$id] = ['t' => 'nums', 'info' => $options];
+                break;
+
+            case 'out':
+                $info = &$this->objects[$id]['info'];
+                $res = '';
+                if (count($info) > 0) {
+                    $res = "\n$id 0 obj\n<</Nums[ ";
+                    $index = 0;
+                    foreach($info['struct_elems'] as $page => $elems) {
+                        $res .= "" . $index . "[";
+                        foreach($elems as $elemI => $elem) {
+                            $res .= " " . $elem . " 0 R";
+                        }
+                        $res .= " ]";
+                        $index++;
+                    }
+                    $res .= "\n] >>\nendobj";
+                }
+                return $res;
+        }
+
+        return null;
+    }
+
 
     /**
      * Enable PDF/A compliance mode
@@ -3141,7 +3382,6 @@ EOT;
     {
         $this->additionalXmpRdf = $xmlRDFContents;
     }
-
     /**
      * Generate the Metadata XMP XML for PDF/A
      *
@@ -3160,6 +3400,7 @@ EOT;
 </rdf:Description>
 
 <rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" rdf:about="">
+
 EOT;
 
         $info = $this->objects[$this->infoObject]["info"];
@@ -3218,9 +3459,13 @@ EOT;
             $md .= "</xmp:ModifyDate>";
         }
 
-        $md .= "\n</rdf:Description>";
-        $md .= $this->additionalXmpRdf;
-        $md .= "\n</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>";
+        $md .= "\n</rdf:Description>\n";
+
+        if($this->pdfa) {
+            $md .= "<rdf:Description rdf:about=\"\" xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\"><pdfuaid:part>1</pdfuaid:part></rdf:Description>";
+        }
+
+        $md .= "</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>";
 
         return $md;
     }
@@ -3455,6 +3700,120 @@ EOT;
             // turn compression off
             $this->options['compression'] = false;
         }
+        
+        if($this->pdfa) {
+
+            $this->o_struct_tree_root($this->numObj, 'new');
+            $this->structTreeRootId = $this->numObj;
+            
+            $this->o_catalog($this->catalogId, 'structTreeRoot', $this->structTreeRootId);
+            $this->o_catalog($this->catalogId, 'viewerPreferences', ['DisplayDocTitle' => true]);
+            
+            $this->o_struct_elem($this->numObj, 'new', ['tag' => 'Document']);
+            $this->documentId = $this->numObj;
+            
+            foreach($this->structElems as $structElem) {
+                $structElem['parent'] = $this->documentId;
+                $this->o_struct_elem($this->numObj, 'new', $structElem);
+            }
+
+            $structEls = [];
+            $structElsPages = [];
+            foreach($this->objects as $k => $v) {
+                if($v['t'] == 'struct_elem' && isset($v['info']['page'])) {
+                    $structEls[] = $k;
+                    $structElsPages[$v['info']['page']][] = $k;
+                }
+            }
+
+            $this->o_nums($this->numObj, 'new', ['struct_elems' => $structElsPages]);
+            
+            $this->o_struct_elem($this->documentId, 'edit', ['tag' => 'Document', 'parent' => $this->structTreeRootId, 'kids' => '[ ' . implode(" ", array_map(function ($a) { return $a . ' 0 R'; }, $structEls)) . ' ]']);
+            $this->o_struct_tree_root($this->structTreeRootId, 'edit', ['parent' => $this->numObj, 'kids' => $this->documentId]);
+
+            foreach($this->outlineElems as $outlineElem) {
+                
+                $outlineLevel = $outlineElem['level'];
+                if($outlineLevel == 1) {
+
+                    $outlineTreeOptions = [
+                        'page' => $outlineElem['page'],
+                        'x' => $outlineElem['x'],
+                        'y' => $outlineElem['y'],
+                        'parent' => $this->outlinesId,
+                        'level' => $outlineLevel,
+                        'title' => $outlineElem['text'],
+                        'outlines' => []
+                    ];
+
+                    $this->o_outline($this->numObj, 'new', $outlineTreeOptions);
+                    $this->o_outlines($this->outlinesId, 'outline', $this->numObj);
+                    $this->o_outlines($this->outlinesId, 'edit', ['first' => $this->numObj, 'last' => $this->numObj]);
+                    $this->currentOutlineId = $this->numObj;
+
+                } elseif($this->currentOutlineId) {
+
+                    while(1) {
+
+                        $levelDiff = $outlineLevel - $this->objects[$this->currentOutlineId]['info']['level'];
+                        // var_dump('level: ' . $levelDiff);
+                    
+                        $parent = null;
+
+                        if($levelDiff == 0) {
+                            $parent = $this->objects[$this->currentOutlineId]['info']['parent'];
+                        } elseif($levelDiff == 1) {
+                            $parent = $this->currentOutlineId;
+                        } elseif($levelDiff < 0) {
+                            $parent = $this->objects[$this->currentOutlineId]['info']['parent'];
+                            for($i = 0; $i > $levelDiff; $i--) {
+                                $parent = $this->objects[$parent]['info']['parent'];
+                            }
+                        } else {
+                            break;
+                        }
+
+                        if($parent === null) {
+                            break;
+                        }
+                        
+                        // var_dump('parent: ' . $parent);
+                        
+                        $outlineTreeOptions = [
+                            'page' => $outlineElem['page'],
+                            'x' => $outlineElem['x'],
+                            'y' => $outlineElem['y'],
+                            'parent' => $parent,
+                            'level' => $outlineLevel,
+                            'title' => $outlineElem['text'],
+                            'outlines' => []
+                        ];
+
+                        $this->o_outline($this->numObj, 'new', $outlineTreeOptions);
+                        $this->o_outline($parent, 'outline', $this->numObj);
+
+                        if($levelDiff == 0) {
+                            // $this->o_outline($parent, 'edit', ['last' => $this->numObj]);
+                            // $this->o_outline($this->currentOutlineId, 'edit', ['next' => $this->numObj]);
+                            // $this->o_outline($this->numObj, 'edit', ['prev' => $this->currentOutlineId]);
+                        } elseif($levelDiff > 0) {
+                            // $this->o_outline($parent, 'edit', ['first' => $this->numObj, 'last' => $this->numObj]);
+                        } elseif($levelDiff < 0) {
+                            // $this->o_outline($parent, 'edit', ['last' => $this->numObj]);
+                        }
+        
+                        $this->currentOutlineId = $this->numObj;
+                        // var_dump('current: ' . $this->currentOutlineId);
+                        break;
+                    }
+
+
+                } else {
+                    // no h1 bookmark so do nothing
+                }
+            }
+        }
+
 
         if ($this->javascript) {
             $this->numObj++;
@@ -3560,6 +3919,7 @@ EOT;
 
         $this->numObj++;
         $this->o_outlines($this->numObj, 'new');
+        $this->outlinesId = $this->numObj;
 
         $this->numObj++;
         $this->o_pages($this->numObj, 'new');
@@ -4963,6 +5323,7 @@ EOT;
         }
 
         $this->numObj++;
+        $this->numStructElem = 0;
 
         if ($insert) {
             // the id from the ezPdf class is the id of the contents of the page, not the page object itself
@@ -5364,13 +5725,15 @@ EOT;
      * @param float  $y
      * @param float  $size
      * @param string $text
+     * @param string $tag
      * @param float  $angle
      * @param float  $wordSpaceAdjust
      * @param float  $charSpaceAdjust
      * @param bool   $smallCaps
      */
-    function addText($x, $y, $size, $text, $angle = 0, $wordSpaceAdjust = 0, $charSpaceAdjust = 0, $smallCaps = false)
+    function addText($x, $y, $size, $text, $tag, $angle = 0, $wordSpaceAdjust = 0, $charSpaceAdjust = 0, $smallCaps = false)
     {
+
         if (!$this->numFonts) {
             $this->selectFont($this->defaultFont);
         }
@@ -5407,6 +5770,26 @@ EOT;
                 $func = $this->callback[$i]['f'];
                 $this->$func($info);
             }
+        }
+
+        if($this->pdfa) {
+            $this->addContent(sprintf("\n/%s <</MCID %d>>BDC", strtoupper($tag), $this->numStructElem));
+            $this->structElems[] = ['id' => $this->numStructElem, 'tag' => strtoupper($tag), 'page' => $this->currentPage, 'kids' => $this->numStructElem, 'text' => $text];
+            $this->numStructElem++;
+
+            // if tag is header tag add outline for bookmarks
+            if(substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1))) {
+
+                $outlineLevel = substr($tag, 1, 1);
+                $this->outlineElems[] = [
+                    'level' => $outlineLevel,
+                    'text' => $text,
+                    'page' => $this->currentPage,
+                    'x' => $x,
+                    'y' => $y + $size
+                ];
+            }
+
         }
 
         if ($angle == 0) {
@@ -5450,6 +5833,10 @@ EOT;
         }
 
         $this->addContent(' ET');
+                
+        if($this->pdfa) {
+            $this->addContent("\nEMC");
+        }
 
         // if there are any open callbacks, then they should be called, to show the end of the line
         if ($this->nCallback > 0) {
@@ -6884,5 +7271,16 @@ EOT;
                 }
                 break;
         }
+    }
+    
+    function pdfHexString($text) {
+        // Convert to UTF-16BE (with BOM)
+        $utf16be = mb_convert_encoding($text, 'UTF-16BE', 'UTF-8');
+    
+        // Convert binary data to uppercase hex
+        $hex = strtoupper(bin2hex($utf16be));
+    
+        // Wrap into PDF hex string format
+        return "<" . $hex . ">";
     }
 }

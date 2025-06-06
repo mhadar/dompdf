@@ -654,7 +654,7 @@ class GD implements Canvas
         imagecopyresampled($this->get_image(), $src, $x, $y, 0, 0, $w, $h, $img_w, $img_h);
     }
 
-    public function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_spacing = 0.0, $char_spacing = 0.0, $angle = 0.0)
+    public function text($x, $y, $text, $tag, $font, $size, $color = [0, 0, 0], $word_spacing = 0.0, $char_spacing = 0.0, $angle = 0.0)
     {
         // Scale by the AA factor and DPI
         $x = $this->_upscale($x);

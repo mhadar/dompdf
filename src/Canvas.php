@@ -329,6 +329,7 @@ interface Canvas
      * @param float  $x
      * @param float  $y
      * @param string $text        The text to write
+     * @param string $tag        The tag of DOMElement
      * @param string $font        The font file to use
      * @param float  $size        The font size, in points
      * @param array  $color       Color array in the format `[r, g, b, "alpha" => alpha]`
@@ -337,7 +338,7 @@ interface Canvas
      * @param float  $char_space  Char spacing adjustment
      * @param float  $angle       Angle to write the text at, measured clockwise starting from the x-axis
      */
-    function text($x, $y, $text, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0);
+    function text($x, $y, $text, $tag, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0);
 
     /**
      * Add a named destination (similar to <a name="foo">...</a> in html)
