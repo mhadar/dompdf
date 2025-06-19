@@ -47,12 +47,17 @@ class Cpdf
     /**
      * @var integer The current number of structure element in current page
      */
-    public $numStructElem = 0;
+    public $numStructElem = [];
 
     /**
      * @var array List of structure elements
      */
     public $structElems = [];
+
+    /**
+     * @var array Stact of open structure elements
+     */
+    public $structElemsStack = [];
 
     /**
      * @var array List of outline elements
@@ -214,6 +219,11 @@ class Cpdf
      * it is used to temporarily change to another state, then change back to what it was before
      */
     public $stateStack = [];
+
+    /**
+     * @var array An array which is used to save the artifact elements
+     */
+    // public $artifactsStack = [];
 
     /**
      * @var integer Number of elements within the state stack
@@ -783,8 +793,11 @@ class Cpdf
                 }
 
                 if($this->pdfa) {
+                    $info = $this->objects[$this->infoObject]["info"];
                     $res .= "\n/MarkInfo << /Marked true >>";
-                    $res .= "\n/Lang (de-AT)";
+                    if(isset($info['lang'])) {
+                        $res .= "\n/Lang (".$info['lang'].")";
+                    }
                 }
 
                 $res .= " >>\nendobj";
@@ -1983,6 +1996,7 @@ EOT;
             case 'CreationDate':
             case 'ModDate':
             case 'Trapped':
+            case 'lang':
                 $this->objects[$id]['info'][$action] = $options;
                 break;
 
@@ -3302,13 +3316,53 @@ EOT;
                 $res = '';
                 if (count($info) > 0) {
                     $res = "\n$id 0 obj\n<</Type/StructElem";
-                    if(isset($info['page'])) {
-                        $res .= "/K<</Type/MCR/MCID " . $info['kids'] . "/Pg " . $info['page'] . " 0 R>>";
-                    } else {
-                        $res .= "/K " . $info['kids'];
+                    if(isset($info['mcid'])) {
+                        $res .= "/K<</Type/MCR/MCID " . $info['mcid'] . "/Pg " . $info['page'] . " 0 R>>";
+                    }
+                    if(isset($info['kids'])) {
+                        if(is_array($info['kids'])) {
+                            $res .= "/K " . '[' . implode(" ", array_map(function ($a) { return $a . ' 0 R'; }, $info['kids'])) . ']';
+                        } else {
+                            $res .= "/K " . $info['kids'];
+                        }
+                    }
+                    if(isset($info['alt']) && $info['alt']) {
+                        $res .= "/Alt (" . $info['alt'] . ")";
+                    }
+                    if(isset($info['bbox'])) {
+                        $res .= sprintf("/A <</Placement/Block/O/Layout/BBox[%.3F %.3F %.3F %.3F]>>", $info['bbox']['x'], $info['bbox']['y'], $info['bbox']['w'], $info['bbox']['h']);
+                    }
+                    if(isset($info['colspan']) && $info['colspan'] > 1 || isset($info['rowspan']) && $info['rowspan'] > 1 || isset($info['headers'])) {
+                        $res .= "/A <</O/Table";
+                        if(isset($info['colspan']) & $info['colspan'] > 1) {
+                            $res .= sprintf("/ColSpan %d", $info['colspan']);
+                        }
+                        if(isset($info['rowspan']) & $info['rowspan'] > 1) {
+                            $res .= sprintf("/RowSpan %d", $info['rowspan']);
+                        }
+                        if(isset($info['headers']) && count($info['headers'])) {
+                            // $headerObjIds = [];
+                            // foreach($info['headers'] as $header) {
+                            //     $headerEl = array_filter($this->structElems, function($structElem) use ($header) {
+                            //         return $header['id'] == $structElem['id'] && $header['page'] == $structElem['page'];
+                            //     });
+                            //     $headerEl = reset($headerEl);
+                            //     if(isset($headerEl['num'])) {
+                            //         $headerObjIds[] = $headerEl['num'];
+                            //     }
+                            // }
+                            // if(count($headerObjIds)) {
+                            //     $res .= "/Headers[ " . implode(" ", array_map(function ($a) { return $a . ' 0 R'; }, $headerObjIds)) . " ]";
+                            // }
+                            $res .= "/Headers[ " . implode(" ", array_map(function ($a) { return '(' . $a . ')'; }, $info['headers'])) . " ]";
+                        }
+                        $res .= ">>";
                     }
                     if(isset($info['parent'])) {
                         $res .= "/P " . $info['parent'] . " 0 R";
+                    }
+                    if(isset($info['struct_id'])) {
+                        $res .= "/ID (".$info['struct_id'].")";
                     }
                     
                     $res .= "/S/" . $info['tag'];
@@ -3349,7 +3403,7 @@ EOT;
                     foreach($info['struct_elems'] as $page => $elems) {
                         $res .= "" . $index . "[";
                         foreach($elems as $elemI => $elem) {
-                            $res .= " " . $elem . " 0 R";
+                            $res .= $elem == null ? " null" : " " . $elem . " 0 R";
                         }
                         $res .= " ]";
                         $index++;
@@ -3711,26 +3765,51 @@ EOT;
             
             $this->o_struct_elem($this->numObj, 'new', ['tag' => 'Document']);
             $this->documentId = $this->numObj;
+
+            $this->assignTableHeaders($this->structElems);
+
+            // var_dump($this->structElems);
             
-            foreach($this->structElems as $structElem) {
-                $structElem['parent'] = $this->documentId;
+            foreach($this->structElems as &$structElem) {
+                $parent = $this->documentId;
+                if($structElem['parent'] !== null) {
+                    $parentEl = array_filter($this->structElems, function($el) use ($structElem) {
+                        return $el['id'] == $structElem['parent'] && $el['page'] == $structElem['page'];
+                    });
+                    $parentEl = reset($parentEl);
+                    $parent = isset($parentEl['num']) ? $parentEl['num'] : $parent;
+                }
+                $structElem['parent'] = $parent;
                 $this->o_struct_elem($this->numObj, 'new', $structElem);
+
+                $parentOptions = $this->objects[$parent]['info'];
+                if(isset($parentOptions['kids'])) {
+                    if(is_array($parentOptions['kids'])) {
+                        $parentOptions['kids'][] = $this->numObj;
+                    } else {
+                        $parentOptions['kids'] = [$parentOptions['kids'], $this->numObj];
+                    }
+                } else {
+                    $parentOptions['kids'] = [$this->numObj];
+                }
+                $this->o_struct_elem($parent, 'edit', $parentOptions);
+                $structElem['num'] = $this->numObj;
             }
 
-            $structEls = [];
             $structElsPages = [];
-            foreach($this->objects as $k => $v) {
-                if($v['t'] == 'struct_elem' && isset($v['info']['page'])) {
-                    $structEls[] = $k;
-                    $structElsPages[$v['info']['page']][] = $k;
-                }
+            foreach($this->structElems as $k => $v) {
+                $structElsPages[$v['page']][$v['id']] = isset($v['mcid']) ? $v['num'] : null;
             }
 
             $this->o_nums($this->numObj, 'new', ['struct_elems' => $structElsPages]);
             
-            $this->o_struct_elem($this->documentId, 'edit', ['tag' => 'Document', 'parent' => $this->structTreeRootId, 'kids' => '[ ' . implode(" ", array_map(function ($a) { return $a . ' 0 R'; }, $structEls)) . ' ]']);
+            $options = $this->objects[$this->documentId]['info'];
+            $options['parent'] = $this->structTreeRootId;
+            $this->o_struct_elem($this->documentId, 'edit', $options);
             $this->o_struct_tree_root($this->structTreeRootId, 'edit', ['parent' => $this->numObj, 'kids' => $this->documentId]);
 
+            // var_dump($this->outlineElems);
+            
             foreach($this->outlineElems as $outlineElem) {
                 
                 $outlineLevel = $outlineElem['level'];
@@ -3756,7 +3835,6 @@ EOT;
                     while(1) {
 
                         $levelDiff = $outlineLevel - $this->objects[$this->currentOutlineId]['info']['level'];
-                        // var_dump('level: ' . $levelDiff);
                     
                         $parent = null;
 
@@ -3777,8 +3855,6 @@ EOT;
                             break;
                         }
                         
-                        // var_dump('parent: ' . $parent);
-                        
                         $outlineTreeOptions = [
                             'page' => $outlineElem['page'],
                             'x' => $outlineElem['x'],
@@ -3792,18 +3868,7 @@ EOT;
                         $this->o_outline($this->numObj, 'new', $outlineTreeOptions);
                         $this->o_outline($parent, 'outline', $this->numObj);
 
-                        if($levelDiff == 0) {
-                            // $this->o_outline($parent, 'edit', ['last' => $this->numObj]);
-                            // $this->o_outline($this->currentOutlineId, 'edit', ['next' => $this->numObj]);
-                            // $this->o_outline($this->numObj, 'edit', ['prev' => $this->currentOutlineId]);
-                        } elseif($levelDiff > 0) {
-                            // $this->o_outline($parent, 'edit', ['first' => $this->numObj, 'last' => $this->numObj]);
-                        } elseif($levelDiff < 0) {
-                            // $this->o_outline($parent, 'edit', ['last' => $this->numObj]);
-                        }
-        
                         $this->currentOutlineId = $this->numObj;
-                        // var_dump('current: ' . $this->currentOutlineId);
                         break;
                     }
 
@@ -4525,10 +4590,28 @@ EOT;
      */
     function line($x1, $y1, $x2, $y2, $stroke = true)
     {
+        if($this->pdfa) {
+
+            // if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
+            //     $this->artifactsStack[] = [
+            //         'func' => 'line',
+            //         'params' => [$x1, $y1, $x2, $y2, $stroke],
+            //         'strokeColor' => $this->currentStrokeColor,
+            //         'lineTransparency' => $this->currentLineTransparency,
+            //         'lineStyle' => $this->currentLineStyle
+            //     ];
+            //     return;
+            // }
+
+            $this->addContent("\n/Artifact BMC");
+        }
         $this->addContent(sprintf("\n%.3F %.3F m %.3F %.3F l", $x1, $y1, $x2, $y2));
 
         if ($stroke) {
             $this->addContent(' S');
+        }
+        if($this->pdfa) {
+            $this->addContent("\nEMC");
         }
     }
 
@@ -4826,6 +4909,9 @@ EOT;
      */
     public function polygon(array $p, bool $fill = false): void
     {
+        if($this->pdfa) {
+            $this->addContent("\n/Artifact BMC");
+        }
         $this->addContent(sprintf("\n%.3F %.3F m ", $p[0], $p[1]));
 
         $n = count($p);
@@ -4837,6 +4923,9 @@ EOT;
             $this->addContent(' f');
         } else {
             $this->addContent(' S');
+        }
+        if($this->pdfa) {
+            $this->addContent("\nEMC");
         }
     }
 
@@ -4851,7 +4940,22 @@ EOT;
      */
     function filledRectangle($x1, $y1, $width, $height)
     {
+        if($this->pdfa) {
+
+            // if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
+            //     $this->artifactsStack[] = [
+            //         'func' => 'filledRectangle',
+            //         'params' => [$x1, $y1, $width, $height],
+            //         'color' => $this->currentColor
+            //     ];
+            //     return;
+            // }
+            $this->addContent("\n/Artifact BMC");
+        }
         $this->addContent(sprintf("\n%.3F %.3F %.3F %.3F re f", $x1, $y1, $width, $height));
+        if($this->pdfa) {
+            $this->addContent("\nEMC");
+        }
     }
 
     /**
@@ -4865,7 +4969,13 @@ EOT;
      */
     function rectangle($x1, $y1, $width, $height)
     {
+        if($this->pdfa) {
+            $this->addContent("\n/Artifact BMC");
+        }
         $this->addContent(sprintf("\n%.3F %.3F %.3F %.3F re S", $x1, $y1, $width, $height));
+        if($this->pdfa) {
+            $this->addContent("\nEMC");
+        }
     }
 
     /**
@@ -4879,7 +4989,13 @@ EOT;
      */
     function rect($x1, $y1, $width, $height)
     {
+        if($this->pdfa) {
+            $this->addContent("\n/Artifact BMC");
+        }
         $this->addContent(sprintf("\n%.3F %.3F %.3F %.3F re", $x1, $y1, $width, $height));
+        if($this->pdfa) {
+            $this->addContent("\nEMC");
+        }
     }
 
     function stroke(bool $close = false)
@@ -5323,7 +5439,6 @@ EOT;
         }
 
         $this->numObj++;
-        $this->numStructElem = 0;
 
         if ($insert) {
             // the id from the ezPdf class is the id of the contents of the page, not the page object itself
@@ -5731,7 +5846,7 @@ EOT;
      * @param float  $charSpaceAdjust
      * @param bool   $smallCaps
      */
-    function addText($x, $y, $size, $text, $tag, $angle = 0, $wordSpaceAdjust = 0, $charSpaceAdjust = 0, $smallCaps = false)
+    function addText($x, $y, $size, $text, $tag = "", $angle = 0, $wordSpaceAdjust = 0, $charSpaceAdjust = 0, $smallCaps = false)
     {
 
         if (!$this->numFonts) {
@@ -5773,21 +5888,41 @@ EOT;
         }
 
         if($this->pdfa) {
-            $this->addContent(sprintf("\n/%s <</MCID %d>>BDC", strtoupper($tag), $this->numStructElem));
-            $this->structElems[] = ['id' => $this->numStructElem, 'tag' => strtoupper($tag), 'page' => $this->currentPage, 'kids' => $this->numStructElem, 'text' => $text];
-            $this->numStructElem++;
+
+            // var_dump("text", $text);
 
             // if tag is header tag add outline for bookmarks
-            if(substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1))) {
+            if($tag && substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1)) || (count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false)) {
 
-                $outlineLevel = substr($tag, 1, 1);
-                $this->outlineElems[] = [
-                    'level' => $outlineLevel,
-                    'text' => $text,
-                    'page' => $this->currentPage,
-                    'x' => $x,
-                    'y' => $y + $size
-                ];
+                $outlineLevel = '';
+                if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
+                    $outlineLevel = $this->outlineElems[count($this->outlineElems) - 1]['level'];
+                } else {
+                    $outlineLevel = substr($tag, 1, 1);
+                }
+
+                if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
+                    $lastOutlineElem = $this->outlineElems[count($this->outlineElems) - 1];
+                    $this->outlineElems[count($this->outlineElems) - 1] = [
+                        'level' => $outlineLevel,
+                        'text' => trim($lastOutlineElem['text']) . ' ' . $text,
+                        'page' => $this->currentPage,
+                        'x' => $x,
+                        'y' => $lastOutlineElem['y'],
+                        'closed' => false
+                    ];
+                } else {
+                    $this->outlineElems[] = [
+                        'level' => $outlineLevel,
+                        'text' => $text,
+                        'page' => $this->currentPage,
+                        'x' => $x,
+                        'y' => $y + $size,
+                        'closed' => false
+                    ];
+                }
+
+
             }
 
         }
@@ -5816,10 +5951,10 @@ EOT;
             $part = $text; // OAR - Don't need this anymore, given that $start always equals zero.  substr($text, $start);
             $place_text = $this->filterText($part, false);
             // modify unicode text so that extra word spacing is manually implemented (bug #)
-            if ($this->fonts[$this->currentFont]['isUnicode'] && $wordSpaceAdjust != 0) {
-                $space_scale = 1000 / $size;
-                $place_text = str_replace("\x00\x20", "\x00\x20)\x00\x20" . (-round($space_scale * $wordSpaceAdjust)) . "\x00\x20(", $place_text);
-            }
+            // if ($this->fonts[$this->currentFont]['isUnicode'] && $wordSpaceAdjust != 0) {
+            //     $space_scale = 1000 / $size;
+            //     $place_text = str_replace("\x00\x20", "\x00\x20)\x00\x20" . (-round($space_scale * $wordSpaceAdjust)) . "\x00\x20(", $place_text);
+            // }
             $this->addContent(" /F$this->currentFontNum " . sprintf('%.1F Tf ', $size));
             $this->addContent(" [($place_text)] TJ");
         }
@@ -5834,9 +5969,9 @@ EOT;
 
         $this->addContent(' ET');
                 
-        if($this->pdfa) {
-            $this->addContent("\nEMC");
-        }
+        // if($this->pdfa) {
+        //     $this->addContent("\nEMC");
+        // }
 
         // if there are any open callbacks, then they should be called, to show the end of the line
         if ($this->nCallback > 0) {
@@ -7283,4 +7418,197 @@ EOT;
         // Wrap into PDF hex string format
         return "<" . $hex . ">";
     }
+
+    function startTag($tag, $options = []) {
+
+        if($this->pdfa) {
+
+            // var_dump("starttag", $tag);
+
+            $numStructElem = isset($this->numStructElem[$this->currentPage]) ? $this->numStructElem[$this->currentPage] : 0;
+
+            $noMcidTag = $tag == 'Table' || $tag == 'TR' || $tag == 'L' || $tag == 'LI';
+            if(!$noMcidTag) {
+                $this->addContent(sprintf("\n/%s <</MCID %d>>BDC", $tag, $numStructElem));
+            }
+
+            $elem = [
+                'id' => $numStructElem,
+                'tag' => $tag,
+                'page' => $this->currentPage,
+                'parent' => count($this->structElemsStack) ? end($this->structElemsStack) : null,
+            ];
+
+            if(!$noMcidTag) {
+                $elem['mcid'] = $numStructElem;
+            }
+
+            if (isset($options['alt'])) {
+                $elem['alt'] = $options['alt'];
+            }
+
+            if (isset($options['bbox'])) {
+                $elem['bbox'] = $options['bbox'];
+            }
+
+            if($tag == "TD" || $tag == "TH") {
+                if (isset($options['colspan'])) {
+                    $elem['colspan'] = $options['colspan'];
+                }
+                if (isset($options['rowspan'])) {
+                    $elem['rowspan'] = $options['rowspan'];
+                }
+            }
+
+            $this->structElems[] = $elem;
+
+            array_push($this->structElemsStack, $numStructElem);
+            $numStructElem++;
+            $this->numStructElem[$this->currentPage] = $numStructElem;
+        }
+    }
+
+    function endTag($tag) {
+        if($this->pdfa) {
+
+            if(!($tag == 'Table' || $tag == 'TR' || $tag == 'L' || $tag == 'LI')) {
+                $this->addContent("\nEMC");
+            }
+
+            if($tag && substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1))) {
+                $this->outlineElems[count($this->outlineElems) - 1]['closed'] = true;
+            }
+
+            array_pop($this->structElemsStack);
+
+            // if(count($this->artifactsStack)) {
+            //     foreach ($this->artifactsStack as $key => $item) {
+            //         if(isset($item['color'])) {
+            //             $this->setColor($item['color']);
+            //         }
+            //         if(isset($item['strokeColor'])) {
+            //             $this->setStrokeColor($item['strokeColor']);
+            //         }
+            //         if(isset($item['lineTransparency'])) {
+            //             $this->setLineTransparency(...$item['lineTransparency']);
+            //         }
+            //         if(isset($item['lineStyle'])) {
+            //             $this->setLineStyle($item['lineStyle']);
+            //         }
+            //         if (method_exists($this, $item['func'])) {
+            //             $this->{$item['func']}(...$item['params']);
+            //         }
+            //         unset($this->artifactsStack[$key]);
+            //     }
+            // }
+        }
+    }
+
+    function assignTableHeaders(array &$elements): void
+    {
+        $headerCounter = 1;
+
+        // Build lookup by id
+        $elementById = [];
+        foreach ($elements as &$el) {
+            $elementById[$el['id']] = &$el;
+        }
+        unset($el); // break reference
+
+        // Pre-generate unique struct_ids for all TH elements
+        foreach ($elements as &$el) {
+            if ($el['tag'] === 'TH') {
+                $el['struct_id'] = 'H' . $headerCounter++;
+            }
+        }
+        unset($el);
+
+        // Find all tables
+        foreach ($elements as $table) {
+            if ($table['tag'] !== 'Table') continue;
+
+            $tableId = $table['id'];
+
+            // Find TRs belonging to this table
+            $trs = [];
+            foreach ($elements as $el) {
+                if ($el['tag'] === 'TR' && $el['parent'] === $tableId) {
+                    $trs[] = $el;
+                }
+            }
+
+            // Build rows of cells under each TR
+            $rows = [];
+            foreach ($trs as $tr) {
+                foreach ($elements as $el) {
+                    if (in_array($el['tag'], ['TH', 'TD']) && $el['parent'] === $tr['id']) {
+                        $rows[$tr['id']][] = $el;
+                    }
+                }
+            }
+
+            // Build grid with colspan/rowspan
+            $grid = [];
+            $occupied = [];
+            $rowKeys = array_keys($rows);
+
+            foreach ($rowKeys as $rowIndex => $trId) {
+                $grid[$rowIndex] = [];
+                $colPos = 0;
+                foreach ($rows[$trId] as $cell) {
+                    while (isset($occupied[$rowIndex][$colPos])) $colPos++;
+
+                    $colspan = isset($cell['colspan']) ? (int)$cell['colspan'] : 1;
+                    $rowspan = isset($cell['rowspan']) ? (int)$cell['rowspan'] : 1;
+
+                    for ($cs = 0; $cs < $colspan; $cs++) {
+                        $grid[$rowIndex][$colPos + $cs] = $cell;
+                    }
+                    for ($rs = 1; $rs < $rowspan; $rs++) {
+                        for ($cs = 0; $cs < $colspan; $cs++) {
+                            $occupied[$rowIndex + $rs][$colPos + $cs] = true;
+                        }
+                    }
+                    $colPos += $colspan;
+                }
+            }
+
+            // Assign headers for each TD cell
+            foreach ($grid as $rowIndex => $columns) {
+                foreach ($columns as $colIndex => $cell) {
+                    if ($cell['tag'] !== 'TD') continue;
+
+                    $headers = [];
+
+                    // Find column header (above)
+                    for ($above = $rowIndex - 1; $above >= 0; $above--) {
+                        if (isset($grid[$above][$colIndex]) && $grid[$above][$colIndex]['tag'] === 'TH') {
+                            $headers[] = $grid[$above][$colIndex]['struct_id'];
+                            break;
+                        }
+                    }
+
+                    // Find row header (left)
+                    for ($left = $colIndex - 1; $left >= 0; $left--) {
+                        if (isset($columns[$left]) && $columns[$left]['tag'] === 'TH') {
+                            $headers[] = $columns[$left]['struct_id'];
+                            break;
+                        }
+                    }
+
+                    // Assign headers directly to TD element
+                    foreach ($elements as &$el) {
+                        if ($el['id'] === $cell['id'] && $el['page'] === $cell['page']) {
+                            if (!empty($headers)) {
+                                $el['headers'] = $headers;
+                            }
+                            break;
+                        }
+                    }
+                    unset($el);
+                }
+            }
+        }
+    }
+
 }

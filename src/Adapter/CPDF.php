@@ -745,9 +745,8 @@ class CPDF implements Canvas
         $pdf->addFormField($ft, rand(), $x, $this->y($y) - $h, $x + $w, $this->y($y), $ff, $size, $color);
     }
 
-    public function text($x, $y, $text, $tag, $font, $size, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
+    public function text($x, $y, $text, $font, $size, $tag, $color = [0, 0, 0], $word_space = 0.0, $char_space = 0.0, $angle = 0.0)
     {
-        
         $pdf = $this->_pdf;
 
         $this->_set_fill_color($color);
@@ -758,6 +757,18 @@ class CPDF implements Canvas
         $pdf->addText($x, $this->y($y) - $pdf->getFontHeight($size), $size, $text, $tag, $angle, $word_space, $char_space);
 
         $this->_set_fill_transparency("Normal", $this->_current_opacity);
+    }
+
+    public function startTag($tag, $options = [])
+    {
+        $pdf = $this->_pdf;
+        $pdf->startTag($tag, $options);
+    }
+
+    public function endTag($tag)
+    {
+        $pdf = $this->_pdf;
+        $pdf->endTag($tag);
     }
 
     public function javascript($code)
@@ -921,7 +932,7 @@ class CPDF implements Canvas
                 [$pageNumber, $pageCount],
                 $text
             );
-            $this->text($x, $y, $text, $font, $size, $color, $word_space, $char_space, $angle);
+            $this->text($x, $y, $text, $font, $size, "", $color, $word_space, $char_space, $angle);
         });
     }
 

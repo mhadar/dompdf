@@ -24,6 +24,11 @@ abstract class AbstractRenderer
 {
 
     /**
+     * Tagged content flag attribute.
+     */
+    public const TAGGED_PDF_ATTRIB = "_tag";
+
+    /**
      * Rendering backend
      *
      * @var \Dompdf\Canvas

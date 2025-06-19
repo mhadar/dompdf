@@ -778,6 +778,12 @@ class Dompdf
             Factory::decorate_frame($frame, $this, $root);
         }
 
+        // Add lang
+        $htmlTag = $this->dom->getElementsByTagName('html')->item(0);
+        if ($htmlTag && $htmlTag->hasAttribute('lang')) {
+            $canvas->add_info("lang", $htmlTag->getAttribute('lang'));
+        }
+
         // Add meta information
         $title = $this->dom->getElementsByTagName("title");
         if ($title->length) {

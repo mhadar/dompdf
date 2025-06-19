@@ -74,8 +74,8 @@ class Text extends AbstractRenderer
           $text
         );*/
 
-        $this->_canvas->text($x, $y, $text, $tag,
-            $font, $size,
+        $this->_canvas->text($x, $y, $text,
+            $font, $size, $tag,
             $style->color, $word_spacing, $letter_spacing);
 
         $line = $frame->get_containing_line();

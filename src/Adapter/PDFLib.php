@@ -1178,7 +1178,7 @@ class PDFLib implements Canvas
         }
     }
 
-    public function text($x, $y, $text, $tag, $font, $size, $color = [0, 0, 0], $word_spacing = 0, $char_spacing = 0, $angle = 0)
+    public function text($x, $y, $text, $font, $size, $tag, $color = [0, 0, 0], $word_spacing = 0, $char_spacing = 0, $angle = 0)
     {
         if ($size == 0) {
             return;

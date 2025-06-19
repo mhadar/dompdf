@@ -16,6 +16,7 @@ use Dompdf\Renderer\TableRow;
 use Dompdf\Renderer\TableRowGroup;
 use Dompdf\Renderer\Text;
 
+
 /**
  * Concrete renderer
  *
@@ -55,6 +56,7 @@ class Renderer extends AbstractRenderer
      */
     public function render(Frame $frame)
     {
+
         global $_dompdf_debug;
 
         $this->_check_callbacks("begin_frame", $frame);
@@ -100,6 +102,13 @@ class Renderer extends AbstractRenderer
             }
         }
 
+        $tagName = "";
+        $outputTagStart = $outputTagEnd = $frame->get_node()->nodeType === 1 && $frame->get_node()->getAttribute(self::TAGGED_PDF_ATTRIB);
+        if($outputTagStart && $display == '-dompdf-image') {
+            $outputTagStart = false;
+            $outputTagEnd = true;
+        }
+
         switch ($display) {
 
             case "block":
@@ -110,20 +119,31 @@ class Renderer extends AbstractRenderer
                 $this->_render_frame("block", $frame);
                 break;
 
-            case "inline":
-                if ($frame->is_text_node()) {
-                    $this->_render_frame("text", $frame);
-                } else {
-                    $this->_render_frame("inline", $frame);
-                }
-                break;
-
             case "table-cell":
                 $this->_render_frame("table-cell", $frame);
                 break;
 
             case "table-row":
                 $this->_render_frame("table-row", $frame);
+                break;
+        }
+
+        if($outputTagStart) {
+            $tagName = $frame->get_node()->getAttribute(self::TAGGED_PDF_ATTRIB);
+            $colspan = max((int) $frame->get_node()->getAttribute("colspan"), 1);
+            $rowspan = max((int) $frame->get_node()->getAttribute("rowspan"), 1);
+
+            $this->_canvas->startTag($tagName, ['colspan' => $colspan, 'rowspan' => $rowspan]);
+        }
+
+        switch ($display) {
+
+            case "inline":
+                if ($frame->is_text_node()) {
+                    $this->_render_frame("text", $frame);
+                } else {
+                    $this->_render_frame("inline", $frame);
+                }
                 break;
 
             case "table-row-group":
@@ -164,6 +184,7 @@ class Renderer extends AbstractRenderer
                 break;
 
         }
+
 
         // Starts the overflow: hidden box
         if ($style->overflow === "hidden") {
@@ -217,8 +238,13 @@ class Renderer extends AbstractRenderer
             $this->_canvas->restore();
         }
 
+        if($outputTagEnd) {
+            $this->_canvas->endTag($tagName);
+        }
+
         // Check for end frame callback
         $this->_check_callbacks("end_frame", $frame);
+        // var_dump("render frame end");
     }
 
     /**

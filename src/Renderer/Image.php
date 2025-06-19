@@ -28,13 +28,26 @@ class Image extends Block
 
         $this->_set_opacity($frame->get_opacity($style->opacity));
 
+        $content_box = $frame->get_content_box();
+        [$x, $y, $w, $h] = $content_box;
+
+        $tagName = $frame->get_node()->getAttribute(self::TAGGED_PDF_ATTRIB);
+        if($tagName) {
+            $options = [];
+            if($frame->get_node()->getAttribute('alt')) {
+                $options['alt'] = $frame->get_node()->getAttribute('alt');
+                $options['bbox'] = ['x' => $x, 'y' => $y, 'w' => $w, 'h' => $h];
+            }
+            $this->_canvas->startTag($tagName, $options);
+        }
+
         // Render background & borders
         $this->_render_background($frame, $border_box);
         $this->_render_border($frame, $border_box);
         $this->_render_outline($frame, $border_box);
 
-        $content_box = $frame->get_content_box();
-        [$x, $y, $w, $h] = $content_box;
+
+        
 
         $src = $frame->get_image_url();
 
@@ -50,6 +63,7 @@ class Image extends Block
                 $alt,
                 $font,
                 $size,
+                "",
                 $style->color,
                 $word_spacing,
                 $letter_spacing
@@ -69,5 +83,6 @@ class Image extends Block
 
         $this->addNamedDest($node);
         $this->debugBlockLayout($frame, "blue");
+
     }
 }

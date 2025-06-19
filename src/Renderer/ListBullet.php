@@ -200,7 +200,7 @@ class ListBullet extends AbstractRenderer
                     // Correct for static frame width applied by positioner
                     $x += $frame->get_width() - $text_width;
 
-                    $this->_canvas->text($x, $y, $text,
+                    $this->_canvas->text($x, $y, $text, "",
                         $font_family, $font_size,
                         $style->color, $word_spacing, $letter_spacing);
                     break;
