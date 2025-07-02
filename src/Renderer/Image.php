@@ -36,6 +36,7 @@ class Image extends Block
             $options = [];
             if($frame->get_node()->getAttribute('alt')) {
                 $options['alt'] = $frame->get_node()->getAttribute('alt');
+                $options['placement'] = $frame->get_node()->getAttribute('_placement');
                 $options['bbox'] = ['x' => $x, 'y' => $y, 'w' => $w, 'h' => $h];
             }
             $this->_canvas->startTag($tagName, $options);

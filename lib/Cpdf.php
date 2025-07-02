@@ -221,11 +221,6 @@ class Cpdf
     public $stateStack = [];
 
     /**
-     * @var array An array which is used to save the artifact elements
-     */
-    // public $artifactsStack = [];
-
-    /**
      * @var integer Number of elements within the state stack
      */
     public $nStateStack = 0;
@@ -425,6 +420,11 @@ class Cpdf
      * @var array
      */
     protected $byteRange = array();
+
+    /**
+     * @var string
+     */
+    protected $lastTagOpen = '';
 
     /**
      * @var array The list of the core fonts
@@ -3767,8 +3767,6 @@ EOT;
             $this->documentId = $this->numObj;
 
             $this->assignTableHeaders($this->structElems);
-
-            // var_dump($this->structElems);
             
             foreach($this->structElems as &$structElem) {
                 $parent = $this->documentId;
@@ -3807,8 +3805,6 @@ EOT;
             $options['parent'] = $this->structTreeRootId;
             $this->o_struct_elem($this->documentId, 'edit', $options);
             $this->o_struct_tree_root($this->structTreeRootId, 'edit', ['parent' => $this->numObj, 'kids' => $this->documentId]);
-
-            // var_dump($this->outlineElems);
             
             foreach($this->outlineElems as $outlineElem) {
                 
@@ -4380,10 +4376,15 @@ EOT;
      * add content to the currently active object
      *
      * @param $content
+     * @param $beforeTag boolean
      */
-    private function addContent($content)
+    private function addContent($content, $beforeTag = false)
     {
-        $this->objects[$this->currentContents]['c'] .= $content;
+        if($beforeTag) {
+            $this->objects[$this->currentContents]['c'] = $this->insertBeforeLastMCID($this->objects[$this->currentContents]['c'], $content);
+        } else {
+            $this->objects[$this->currentContents]['c'] .= $content;
+        }
     }
 
     /**
@@ -4591,19 +4592,9 @@ EOT;
     function line($x1, $y1, $x2, $y2, $stroke = true)
     {
         if($this->pdfa) {
-
-            // if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
-            //     $this->artifactsStack[] = [
-            //         'func' => 'line',
-            //         'params' => [$x1, $y1, $x2, $y2, $stroke],
-            //         'strokeColor' => $this->currentStrokeColor,
-            //         'lineTransparency' => $this->currentLineTransparency,
-            //         'lineStyle' => $this->currentLineStyle
-            //     ];
-            //     return;
-            // }
-
-            $this->addContent("\n/Artifact BMC");
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
         }
         $this->addContent(sprintf("\n%.3F %.3F m %.3F %.3F l", $x1, $y1, $x2, $y2));
 
@@ -4611,7 +4602,9 @@ EOT;
             $this->addContent(' S');
         }
         if($this->pdfa) {
-            $this->addContent("\nEMC");
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
         }
     }
 
@@ -4631,9 +4624,19 @@ EOT;
     {
         // in the current line style, draw a bezier curve from (x0,y0) to (x3,y3) using the other two points
         // as the control points for the curve.
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
+        }
         $this->addContent(
             sprintf("\n%.3F %.3F m %.3F %.3F %.3F %.3F %.3F %.3F c S", $x0, $y0, $x1, $y1, $x2, $y2, $x3, $y3)
         );
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
+        }
     }
 
     /**
@@ -4749,6 +4752,7 @@ EOT;
      * @param bool  $fill
      * @param bool  $stroke
      * @param bool  $incomplete
+     * @param bool  $addTag
      */
     function ellipse(
         $x0,
@@ -4762,7 +4766,8 @@ EOT;
         $close = true,
         $fill = false,
         $stroke = true,
-        $incomplete = false
+        $incomplete = false,
+        $addTag = true
     ) {
         if ($r1 == 0) {
             return;
@@ -4782,6 +4787,13 @@ EOT;
 
         $dt = $totalAngle / $nSeg;
         $dtm = $dt / 3;
+
+        
+        if($this->pdfa && $addTag) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
+        }
 
         if ($angle != 0) {
             $a = -1 * deg2rad((float)$angle);
@@ -4847,6 +4859,12 @@ EOT;
         if ($angle != 0) {
             $this->addContent(' Q');
         }
+        
+        if($this->pdfa && $addTag) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
+        }
     }
 
     /**
@@ -4910,7 +4928,9 @@ EOT;
     public function polygon(array $p, bool $fill = false): void
     {
         if($this->pdfa) {
-            $this->addContent("\n/Artifact BMC");
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
         }
         $this->addContent(sprintf("\n%.3F %.3F m ", $p[0], $p[1]));
 
@@ -4925,7 +4945,9 @@ EOT;
             $this->addContent(' S');
         }
         if($this->pdfa) {
-            $this->addContent("\nEMC");
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
         }
     }
 
@@ -4940,22 +4962,23 @@ EOT;
      */
     function filledRectangle($x1, $y1, $width, $height)
     {
+        $content = '';
+        $moveTag = false;
         if($this->pdfa) {
-
-            // if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
-            //     $this->artifactsStack[] = [
-            //         'func' => 'filledRectangle',
-            //         'params' => [$x1, $y1, $width, $height],
-            //         'color' => $this->currentColor
-            //     ];
-            //     return;
-            // }
-            $this->addContent("\n/Artifact BMC");
+            if($this->lastTagOpen != 'Figure') {
+                $content .= "\n/Artifact BMC";
+                if($this->lastTagOpen != '') {
+                    $moveTag = true;
+                }
+            }
         }
-        $this->addContent(sprintf("\n%.3F %.3F %.3F %.3F re f", $x1, $y1, $width, $height));
+        $content .= sprintf("\n%.3F %.3F %.3F %.3F re f", $x1, $y1, $width, $height);
         if($this->pdfa) {
-            $this->addContent("\nEMC");
+            if($this->lastTagOpen != 'Figure') {
+                $content .= "\nEMC";
+            }
         }
+        $this->addContent($content, $moveTag);
     }
 
     /**
@@ -4970,11 +4993,15 @@ EOT;
     function rectangle($x1, $y1, $width, $height)
     {
         if($this->pdfa) {
-            $this->addContent("\n/Artifact BMC");
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
         }
         $this->addContent(sprintf("\n%.3F %.3F %.3F %.3F re S", $x1, $y1, $width, $height));
         if($this->pdfa) {
-            $this->addContent("\nEMC");
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
         }
     }
 
@@ -4990,11 +5017,11 @@ EOT;
     function rect($x1, $y1, $width, $height)
     {
         if($this->pdfa) {
-            $this->addContent("\n/Artifact BMC");
+            // $this->addContent("\n/Artifact BMC");
         }
         $this->addContent(sprintf("\n%.3F %.3F %.3F %.3F re", $x1, $y1, $width, $height));
         if($this->pdfa) {
-            $this->addContent("\nEMC");
+            // $this->addContent("\nEMC");
         }
     }
 
@@ -5249,6 +5276,13 @@ EOT;
     {
         $this->save();
 
+        
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
+        }
+
         // start: top edge, left end
         $this->addContent(sprintf("\n%.3F %.3F m ", $x1, $y1 - $rTL + $h));
 
@@ -5256,31 +5290,37 @@ EOT;
         $this->addContent(sprintf("\n%.3F %.3F l ", $x1, $y1 + $rBL));
 
         // curve: bottom-left corner
-        $this->ellipse($x1 + $rBL, $y1 + $rBL, $rBL, 0, 0, 8, 180, 270, false, false, false, true);
+        $this->ellipse($x1 + $rBL, $y1 + $rBL, $rBL, 0, 0, 8, 180, 270, false, false, false, true, false);
 
         // line: right edge, bottom end
         $this->addContent(sprintf("\n%.3F %.3F l ", $x1 + $w - $rBR, $y1));
 
         // curve: bottom-right corner
-        $this->ellipse($x1 + $w - $rBR, $y1 + $rBR, $rBR, 0, 0, 8, 270, 360, false, false, false, true);
+        $this->ellipse($x1 + $w - $rBR, $y1 + $rBR, $rBR, 0, 0, 8, 270, 360, false, false, false, true, false);
 
         // line: right edge, top end
         $this->addContent(sprintf("\n%.3F %.3F l ", $x1 + $w, $y1 + $h - $rTR));
 
         // curve: bottom-right corner
-        $this->ellipse($x1 + $w - $rTR, $y1 + $h - $rTR, $rTR, 0, 0, 8, 0, 90, false, false, false, true);
+        $this->ellipse($x1 + $w - $rTR, $y1 + $h - $rTR, $rTR, 0, 0, 8, 0, 90, false, false, false, true, false);
 
         // line: bottom edge, right end
         $this->addContent(sprintf("\n%.3F %.3F l ", $x1 + $rTL, $y1 + $h));
 
         // curve: top-right corner
-        $this->ellipse($x1 + $rTL, $y1 + $h - $rTL, $rTL, 0, 0, 8, 90, 180, false, false, false, true);
+        $this->ellipse($x1 + $rTL, $y1 + $h - $rTL, $rTL, 0, 0, 8, 90, 180, false, false, false, true, false);
 
         // line: top edge, left end
         $this->addContent(sprintf("\n%.3F %.3F l ", $x1 + $rBL, $y1));
 
         // Close & clip
         $this->addContent(" W n");
+        
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
+        }
     }
 
     /**
@@ -5888,8 +5928,6 @@ EOT;
         }
 
         if($this->pdfa) {
-
-            // var_dump("text", $text);
 
             // if tag is header tag add outline for bookmarks
             if($tag && substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1)) || (count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false)) {
@@ -7423,13 +7461,17 @@ EOT;
 
         if($this->pdfa) {
 
-            // var_dump("starttag", $tag);
-
             $numStructElem = isset($this->numStructElem[$this->currentPage]) ? $this->numStructElem[$this->currentPage] : 0;
 
-            $noMcidTag = $tag == 'Table' || $tag == 'TR' || $tag == 'L' || $tag == 'LI';
+            $noMcidTag = $tag == 'Table' || $tag == 'TR' || $tag == 'L' || $tag == 'LI' || $tag == 'Artifact';
             if(!$noMcidTag) {
+                $this->lastTagOpen = $tag;
                 $this->addContent(sprintf("\n/%s <</MCID %d>>BDC", $tag, $numStructElem));
+            }
+
+            if($tag == 'Artifact') {
+                $this->addContent("\n/Artifact BMC");
+                return;
             }
 
             $elem = [
@@ -7437,10 +7479,15 @@ EOT;
                 'tag' => $tag,
                 'page' => $this->currentPage,
                 'parent' => count($this->structElemsStack) ? end($this->structElemsStack) : null,
+                'closed' => false
             ];
 
             if(!$noMcidTag) {
                 $elem['mcid'] = $numStructElem;
+            }
+
+            if (isset($options['placement'])) {
+                $elem['placement'] = $options['placement'];
             }
 
             if (isset($options['alt'])) {
@@ -7471,8 +7518,16 @@ EOT;
     function endTag($tag) {
         if($this->pdfa) {
 
-            if(!($tag == 'Table' || $tag == 'TR' || $tag == 'L' || $tag == 'LI')) {
+            $noMcidTag = $tag == 'Table' || $tag == 'TR' || $tag == 'L' || $tag == 'LI' || $tag == 'Artifact';
+            if(!$noMcidTag) {
+                $this->lastTagOpen = '';
                 $this->addContent("\nEMC");
+            }
+
+            if($tag == 'Artifact') {
+                $this->lastTagOpen = '';
+                $this->addContent("\nEMC");
+                return;
             }
 
             if($tag && substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1))) {
@@ -7481,39 +7536,12 @@ EOT;
 
             array_pop($this->structElemsStack);
 
-            // if(count($this->artifactsStack)) {
-            //     foreach ($this->artifactsStack as $key => $item) {
-            //         if(isset($item['color'])) {
-            //             $this->setColor($item['color']);
-            //         }
-            //         if(isset($item['strokeColor'])) {
-            //             $this->setStrokeColor($item['strokeColor']);
-            //         }
-            //         if(isset($item['lineTransparency'])) {
-            //             $this->setLineTransparency(...$item['lineTransparency']);
-            //         }
-            //         if(isset($item['lineStyle'])) {
-            //             $this->setLineStyle($item['lineStyle']);
-            //         }
-            //         if (method_exists($this, $item['func'])) {
-            //             $this->{$item['func']}(...$item['params']);
-            //         }
-            //         unset($this->artifactsStack[$key]);
-            //     }
-            // }
         }
     }
 
     function assignTableHeaders(array &$elements): void
     {
         $headerCounter = 1;
-
-        // Build lookup by id
-        $elementById = [];
-        foreach ($elements as &$el) {
-            $elementById[$el['id']] = &$el;
-        }
-        unset($el); // break reference
 
         // Pre-generate unique struct_ids for all TH elements
         foreach ($elements as &$el) {
@@ -7528,11 +7556,12 @@ EOT;
             if ($table['tag'] !== 'Table') continue;
 
             $tableId = $table['id'];
+            $pageId = $table['page'];
 
             // Find TRs belonging to this table
             $trs = [];
             foreach ($elements as $el) {
-                if ($el['tag'] === 'TR' && $el['parent'] === $tableId) {
+                if ($el['tag'] === 'TR' && $el['parent'] === $tableId && $el['page'] === $pageId) {
                     $trs[] = $el;
                 }
             }
@@ -7541,7 +7570,7 @@ EOT;
             $rows = [];
             foreach ($trs as $tr) {
                 foreach ($elements as $el) {
-                    if (in_array($el['tag'], ['TH', 'TD']) && $el['parent'] === $tr['id']) {
+                    if (in_array($el['tag'], ['TH', 'TD']) && $el['parent'] === $tr['id'] && $el['page'] === $pageId) {
                         $rows[$tr['id']][] = $el;
                     }
                 }
@@ -7598,7 +7627,7 @@ EOT;
 
                     // Assign headers directly to TD element
                     foreach ($elements as &$el) {
-                        if ($el['id'] === $cell['id'] && $el['page'] === $cell['page']) {
+                        if ($el['id'] . '-' . $el['page'] === $cell['id'] . '-' . $cell['page']) {
                             if (!empty($headers)) {
                                 $el['headers'] = $headers;
                             }
@@ -7611,4 +7640,37 @@ EOT;
         }
     }
 
+    private function insertBeforeLastMCID($contents, $insert) {
+
+        $pattern = '/\/\w+\s+<<\/MCID\s+\d+>>BDC/';
+
+        if (preg_match_all($pattern, $contents, $matches, PREG_OFFSET_CAPTURE)) {
+            $lastMatch = end($matches[0]);
+            $lastMatchString = $lastMatch[0];
+            $lastPos = strrpos($contents, $lastMatchString);
+
+            if ($lastPos !== false) {
+                $before = substr($contents, 0, $lastPos);
+                $after = substr($contents, $lastPos);
+
+                // Match color/stroke lines in $after
+                preg_match_all('/^.*?\b(?:rg|RG|g|G|k|K)\b.*$/m', $after, $colorLines);
+
+                // Extract color lines
+                $colorBlock = '';
+                if (!empty($colorLines[0])) {
+                    foreach ($colorLines[0] as $line) {
+                        // Remove from $after
+                        $after = str_replace($line . "\n", '', $after);
+                        $colorBlock .= $line . "\n";
+                    }
+                }
+
+                // Insert: before MCID + moved color lines
+                $contents = $before . $colorBlock . $insert . "\n" . $after;
+            }
+        }
+
+        return $contents;
+    }
 }

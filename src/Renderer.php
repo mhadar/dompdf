@@ -130,10 +130,21 @@ class Renderer extends AbstractRenderer
 
         if($outputTagStart) {
             $tagName = $frame->get_node()->getAttribute(self::TAGGED_PDF_ATTRIB);
-            $colspan = max((int) $frame->get_node()->getAttribute("colspan"), 1);
-            $rowspan = max((int) $frame->get_node()->getAttribute("rowspan"), 1);
+            $options['colspan'] = max((int) $frame->get_node()->getAttribute("colspan"), 1);
+            $options['rowspan'] = max((int) $frame->get_node()->getAttribute("rowspan"), 1);
+            if($frame->get_node()->hasAttribute('_placement')) {
+                $options['placement'] = $frame->get_node()->getAttribute('_placement');
+            }
+            if($frame->get_node()->hasAttribute('alt')) {
+                $options['alt'] = $frame->get_node()->getAttribute('alt');
+            }
+            if($tagName == 'Figure') {
+                $content_box = $frame->get_content_box();
+                [$x, $y, $w, $h] = $content_box;
+                $options['bbox'] = ['x' => $x, 'y' => $y, 'w' => $w, 'h' => $h];
+            }
 
-            $this->_canvas->startTag($tagName, ['colspan' => $colspan, 'rowspan' => $rowspan]);
+            $this->_canvas->startTag($tagName, $options);
         }
 
         switch ($display) {
