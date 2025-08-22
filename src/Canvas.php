@@ -335,8 +335,9 @@ interface Canvas
      * @param float  $w          Width
      * @param float  $h          Height
      * @param string $resolution The resolution of the image
+     * @param boolean $isBackground
      */
-    function image($img, $x, $y, $w, $h, $resolution = "normal");
+    function image($img, $x, $y, $w, $h, $resolution = "normal", $isBackground = false);
 
     /**
      * Writes text at the specified x and y coordinates

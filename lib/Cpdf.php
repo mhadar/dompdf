@@ -2459,6 +2459,7 @@ EOT;
      */
     protected function o_image($id, $action, $options = '')
     {
+
         switch ($action) {
             case 'new':
                 // make the new object
@@ -2470,6 +2471,7 @@ EOT;
                 $info['Subtype'] = '/Image';
                 $info['Width'] = $options['iw'];
                 $info['Height'] = $options['ih'];
+                $info['is_background'] = isset($options['is_background']) ? $options['is_background'] : false;
 
                 if (isset($options['masked']) && $options['masked']) {
                     $info['SMask'] = ($this->numObj - 1) . ' 0 R';
@@ -2575,10 +2577,15 @@ EOT;
             case 'out':
                 $o = &$this->objects[$id];
                 $tmp = &$o['data'];
-                $res = "\n$id 0 obj\n<<";
+
+                $res = "";
+
+                $res .= "\n$id 0 obj\n<<";
 
                 foreach ($o['info'] as $k => $v) {
-                    $res .= "\n/$k $v";
+                    if($k != 'is_background') {
+                        $res .= "\n/$k $v";
+                    }
                 }
 
                 if ($this->encrypted) {
@@ -4591,20 +4598,36 @@ EOT;
      */
     function line($x1, $y1, $x2, $y2, $stroke = true)
     {
+        $content = '';
         if($this->pdfa) {
             if($this->lastTagOpen != 'Figure') {
-                $this->addContent("\n/Artifact BMC");
+                // $this->addContent("\n/Artifact BMC");
+                $content .= "\n/Artifact BMC";
             }
         }
-        $this->addContent(sprintf("\n%.3F %.3F m %.3F %.3F l", $x1, $y1, $x2, $y2));
+        // $this->addContent(sprintf("\n%.3F %.3F m %.3F %.3F l", $x1, $y1, $x2, $y2));
+        $content .= sprintf("\n%.3F %.3F m %.3F %.3F l", $x1, $y1, $x2, $y2);
 
         if ($stroke) {
-            $this->addContent(' S');
+            $content .= ' S';
+            // $this->addContent(' S');
         }
         if($this->pdfa) {
             if($this->lastTagOpen != 'Figure') {
-                $this->addContent("\nEMC");
+                $content .= "\nEMC";
+                // $this->addContent("\nEMC");
             }
+        }
+
+        $moveTag = false;
+        if($this->pdfa && $this->lastTagOpen != 'Figure' && $this->lastTagOpen != '') {
+            $moveTag = true;
+        }
+
+        if($moveTag) {
+            $this->addContent($content, true);
+        } else {
+            $this->addContent($content);
         }
     }
 
@@ -4788,19 +4811,22 @@ EOT;
         $dt = $totalAngle / $nSeg;
         $dtm = $dt / 3;
 
+        $content = '';
         
         if($this->pdfa && $addTag) {
             if($this->lastTagOpen != 'Figure') {
-                $this->addContent("\n/Artifact BMC");
+                $content .= "\n/Artifact BMC";
+                // $this->addContent("\n/Artifact BMC");
             }
         }
 
         if ($angle != 0) {
             $a = -1 * deg2rad((float)$angle);
 
-            $this->addContent(
-                sprintf("\n q %.3F %.3F %.3F %.3F %.3F %.3F cm", cos($a), -sin($a), sin($a), cos($a), $x0, $y0)
-            );
+            $content .= sprintf("\n q %.3F %.3F %.3F %.3F %.3F %.3F cm", cos($a), -sin($a), sin($a), cos($a), $x0, $y0);
+            // $this->addContent(
+            //     sprintf("\n q %.3F %.3F %.3F %.3F %.3F %.3F cm", cos($a), -sin($a), sin($a), cos($a), $x0, $y0)
+            // );
 
             $x0 = 0;
             $y0 = 0;
@@ -4813,7 +4839,8 @@ EOT;
         $d0 = $r2 * cos($t1);
 
         if (!$incomplete) {
-            $this->addContent(sprintf("\n%.3F %.3F m ", $a0, $b0));
+            $content .= sprintf("\n%.3F %.3F m ", $a0, $b0);
+            // $this->addContent(sprintf("\n%.3F %.3F m ", $a0, $b0));
         }
 
         for ($i = 1; $i <= $nSeg; $i++) {
@@ -4824,17 +4851,26 @@ EOT;
             $c1 = -$r1 * sin($t1);
             $d1 = $r2 * cos($t1);
 
-            $this->addContent(
-                sprintf(
-                    "\n%.3F %.3F %.3F %.3F %.3F %.3F c",
-                    ($a0 + $c0 * $dtm),
-                    ($b0 + $d0 * $dtm),
-                    ($a1 - $c1 * $dtm),
-                    ($b1 - $d1 * $dtm),
-                    $a1,
-                    $b1
-                )
+            $content .= sprintf(
+                "\n%.3F %.3F %.3F %.3F %.3F %.3F c",
+                ($a0 + $c0 * $dtm),
+                ($b0 + $d0 * $dtm),
+                ($a1 - $c1 * $dtm),
+                ($b1 - $d1 * $dtm),
+                $a1,
+                $b1
             );
+            // $this->addContent(
+            //     sprintf(
+            //         "\n%.3F %.3F %.3F %.3F %.3F %.3F c",
+            //         ($a0 + $c0 * $dtm),
+            //         ($b0 + $d0 * $dtm),
+            //         ($a1 - $c1 * $dtm),
+            //         ($b1 - $d1 * $dtm),
+            //         $a1,
+            //         $b1
+            //     )
+            // );
 
             $a0 = $a1;
             $b0 = $b1;
@@ -4844,26 +4880,42 @@ EOT;
 
         if (!$incomplete) {
             if ($fill) {
-                $this->addContent(' f');
+                $content .= ' f';
+                // $this->addContent(' f');
             }
 
             if ($stroke) {
                 if ($close) {
-                    $this->addContent(' s'); // small 's' signifies closing the path as well
+                    $content .= ' s';
+                    // $this->addContent(' s'); // small 's' signifies closing the path as well
                 } else {
-                    $this->addContent(' S');
+                    $content .= ' S';
+                    // $this->addContent(' S');
                 }
             }
         }
 
         if ($angle != 0) {
-            $this->addContent(' Q');
+            $content .= ' Q';
+            // $this->addContent(' Q');
         }
         
         if($this->pdfa && $addTag) {
             if($this->lastTagOpen != 'Figure') {
-                $this->addContent("\nEMC");
+                $content .= "\nEMC";
+                // $this->addContent("\nEMC");
             }
+        }
+
+        $moveTag = false;
+        if($this->pdfa && $this->lastTagOpen != 'Figure' && $this->lastTagOpen != '') {
+            $moveTag = true;
+        }
+
+        if($moveTag) {
+            $this->addContent($content, true);
+        } else {
+            $this->addContent($content);
         }
     }
 
@@ -5276,7 +5328,6 @@ EOT;
     {
         $this->save();
 
-        
         if($this->pdfa) {
             if($this->lastTagOpen != 'Figure') {
                 $this->addContent("\n/Artifact BMC");
@@ -5927,44 +5978,6 @@ EOT;
             }
         }
 
-        if($this->pdfa) {
-
-            // if tag is header tag add outline for bookmarks
-            if($tag && substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1)) || (count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false)) {
-
-                $outlineLevel = '';
-                if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
-                    $outlineLevel = $this->outlineElems[count($this->outlineElems) - 1]['level'];
-                } else {
-                    $outlineLevel = substr($tag, 1, 1);
-                }
-
-                if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
-                    $lastOutlineElem = $this->outlineElems[count($this->outlineElems) - 1];
-                    $this->outlineElems[count($this->outlineElems) - 1] = [
-                        'level' => $outlineLevel,
-                        'text' => trim($lastOutlineElem['text']) . ' ' . $text,
-                        'page' => $this->currentPage,
-                        'x' => $x,
-                        'y' => $lastOutlineElem['y'],
-                        'closed' => false
-                    ];
-                } else {
-                    $this->outlineElems[] = [
-                        'level' => $outlineLevel,
-                        'text' => $text,
-                        'page' => $this->currentPage,
-                        'x' => $x,
-                        'y' => $y + $size,
-                        'closed' => false
-                    ];
-                }
-
-
-            }
-
-        }
-
         if ($angle == 0) {
             $this->addContent(sprintf("\nBT %.3F %.3F Td", $x, $y));
         } else {
@@ -6492,7 +6505,7 @@ EOT;
      * @param bool $mask true if the image is masked
      * @throws Exception
      */
-    function addImagePng(&$img, $file, $x, $y, $w = 0.0, $h = 0.0, $is_mask = false, $mask = null)
+    function addImagePng(&$img, $file, $x, $y, $w = 0.0, $h = 0.0, $is_mask = false, $mask = null, $isBackground = false)
     {
         if (!function_exists("imagepng")) {
             throw new \Exception("The PHP GD extension is required, but is not installed.");
@@ -6544,7 +6557,7 @@ EOT;
             }
         }  //End isset($this->imagelist[$file]) (png Duplicate removal)
 
-        $this->addPngFromBuf($data, $file, $x, $y, $w, $h, $is_mask, $mask);
+        $this->addPngFromBuf($data, $file, $x, $y, $w, $h, $is_mask, $mask, $isBackground);
     }
 
     /**
@@ -6554,8 +6567,9 @@ EOT;
      * @param $w
      * @param $h
      * @param $byte
+     * @param boolean $isBackground
      */
-    protected function addImagePngAlpha($file, $x, $y, $w, $h, $byte)
+    protected function addImagePngAlpha($file, $x, $y, $w, $h, $byte, $isBackground)
     {
         // generate images
         $img = @imagecreatefrompng($file);
@@ -6728,13 +6742,13 @@ EOT;
 
         // embed mask image
         if ($tempfile_alpha) {
-            $this->addImagePng($imgalpha, $tempfile_alpha, $x, $y, $w, $h, true);
+            $this->addImagePng($imgalpha, $tempfile_alpha, $x, $y, $w, $h, true, null, $isBackground);
             imagedestroy($imgalpha);
             $this->imageCache[] = $tempfile_alpha;
         }
 
         // embed image, masked with previously embedded mask
-        $this->addImagePng($imgplain, $tempfile_plain, $x, $y, $w, $h, false, ($tempfile_alpha !== null));
+        $this->addImagePng($imgplain, $tempfile_plain, $x, $y, $w, $h, false, ($tempfile_alpha !== null), $isBackground);
         imagedestroy($imgplain);
         $this->imageCache[] = $tempfile_plain;
     }
@@ -6748,9 +6762,10 @@ EOT;
      * @param $y
      * @param int $w
      * @param int $h
+     * @param boolean $isBackground
      * @throws Exception
      */
-    function addPngFromFile($file, $x, $y, $w = 0, $h = 0)
+    function addPngFromFile($file, $x, $y, $w = 0, $h = 0, $isBackground = false)
     {
         if (!function_exists("imagecreatefrompng")) {
             throw new \Exception("The PHP GD extension is required, but is not installed.");
@@ -6761,11 +6776,11 @@ EOT;
 
             if ($alphaFile) {
                 $img = null;
-                $this->addImagePng($img, $alphaFile, $x, $y, $w, $h, true);
+                $this->addImagePng($img, $alphaFile, $x, $y, $w, $h, true, null, $isBackground);
             }
 
             $img = null;
-            $this->addImagePng($img, $plainFile, $x, $y, $w, $h, false, ($plainFile !== null));
+            $this->addImagePng($img, $plainFile, $x, $y, $w, $h, false, ($plainFile !== null), $isBackground);
             return;
         }
 
@@ -6785,7 +6800,7 @@ EOT;
             $is_alpha = in_array($color_type, [4, 6]) || ($color_type == 3 && $bit_depth != 4);
 
             if ($is_alpha) { // exclude grayscale alpha
-                $this->addImagePngAlpha($file, $x, $y, $w, $h, $color_type);
+                $this->addImagePngAlpha($file, $x, $y, $w, $h, $color_type, $isBackground);
                 return;
             }
 
@@ -6822,7 +6837,7 @@ EOT;
             imagecopy($img, $imgtmp, 0, 0, 0, 0, $sx, $sy);
             imagedestroy($imgtmp);
         }
-        $this->addImagePng($img, $file, $x, $y, $w, $h);
+        $this->addImagePng($img, $file, $x, $y, $w, $h, false, null, $isBackground);
 
         if ($img) {
             imagedestroy($img);
@@ -6837,8 +6852,9 @@ EOT;
      * @param $y
      * @param int $w
      * @param int $h
+     * @param boolean $isBackground
      */
-    function addSvgFromFile($file, $x, $y, $w = 0, $h = 0)
+    function addSvgFromFile($file, $x, $y, $w = 0, $h = 0, $isBackground = false)
     {
         $doc = new \Svg\Document();
         $doc->loadFile($file);
@@ -6865,9 +6881,11 @@ EOT;
      * @param float $h
      * @param bool $is_mask
      * @param null $mask
+     * @param boolean $isBackground
      */
-    function addPngFromBuf(&$data, $file, $x, $y, $w = 0.0, $h = 0.0, $is_mask = false, $mask = null)
+    function addPngFromBuf(&$data, $file, $x, $y, $w = 0.0, $h = 0.0, $is_mask = false, $mask = null, $isBackground = false)
     {
+
         if (isset($this->imagelist[$file])) {
             $data = null;
             $info['width'] = $this->imagelist[$file]['w'];
@@ -7115,7 +7133,8 @@ EOT;
                 'color'            => $color,
                 'ncolor'           => $ncolor,
                 'masked'           => $mask,
-                'isMask'           => $is_mask
+                'isMask'           => $is_mask,
+                'is_background'           => $isBackground
             ];
 
             if (isset($transparency)) {
@@ -7143,7 +7162,15 @@ EOT;
             $h = $w * $info['height'] / $info['width'];
         }
 
+        if($this->pdfa && $isBackground) {
+            $this->addContent("\n/Artifact BMC");
+        }
+
         $this->addContent(sprintf("\nq\n%.3F 0 0 %.3F %.3F %.3F cm /%s Do\nQ", $w, $h, $x, $y, $label));
+
+        if($this->pdfa && $isBackground) {
+            $this->addContent("\nEMC");
+        }
     }
 
     /**
@@ -7154,8 +7181,9 @@ EOT;
      * @param $y
      * @param int $w
      * @param int $h
+     * @param boolean $isBackground
      */
-    function addJpegFromFile($img, $x, $y, $w = 0, $h = 0)
+    function addJpegFromFile($img, $x, $y, $w = 0, $h = 0, $isBackground = false)
     {
         // attempt to add a jpeg image straight from a file, using no GD commands
         // note that this function is unable to operate on a remote file.
@@ -7200,7 +7228,7 @@ EOT;
             $h = $w * $imageHeight / $imageWidth;
         }
 
-        $this->addJpegImage_common($data, $filename, $imageWidth, $imageHeight, $x, $y, $w, $h, $channels);
+        $this->addJpegImage_common($data, $filename, $imageWidth, $imageHeight, $x, $y, $w, $h, $channels, $isBackground);
     }
 
     /**
@@ -7224,7 +7252,8 @@ EOT;
         $y,
         $w = 0,
         $h = 0,
-        $channels = 3
+        $channels = 3,
+        $isBackground = false
     ) {
         if ($this->image_iscached($imgname)) {
             $label = $this->imagelist[$imgname]['label'];
@@ -7253,7 +7282,8 @@ EOT;
                     'data'     => &$data,
                     'iw'       => $imageWidth,
                     'ih'       => $imageHeight,
-                    'channels' => $channels
+                    'channels' => $channels,
+                    'isBackground' => $isBackground
                 ]
             );
 
@@ -7474,6 +7504,38 @@ EOT;
                 return;
             }
 
+            // if tag is header tag add outline for bookmarks
+            if($tag && substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1)) || (count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false)) {
+
+                $outlineLevel = '';
+                if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
+                    $outlineLevel = $this->outlineElems[count($this->outlineElems) - 1]['level'];
+                } else {
+                    $outlineLevel = substr($tag, 1, 1);
+                }
+
+                if(count($this->outlineElems) && $this->outlineElems[count($this->outlineElems) - 1]['closed'] == false) {
+                    $lastOutlineElem = $this->outlineElems[count($this->outlineElems) - 1];
+                    $this->outlineElems[count($this->outlineElems) - 1] = [
+                        'level' => $outlineLevel,
+                        'text' => trim($lastOutlineElem['text']) . ' ' . $options['text'],
+                        'page' => $this->currentPage,
+                        'x' => $options['x'],
+                        'y' => $this->currentPageSize["height"] - $options['y'] - $options['size'],
+                        'closed' => false
+                    ];
+                } else {
+                    $this->outlineElems[] = [
+                        'level' => $outlineLevel,
+                        'text' => $options['text'],
+                        'page' => $this->currentPage,
+                        'x' => $options['x'],
+                        'y' => $this->currentPageSize["height"] - $options['y'] - $options['size'],
+                        'closed' => false
+                    ];
+                }
+            }
+
             $elem = [
                 'id' => $numStructElem,
                 'tag' => $tag,
@@ -7531,7 +7593,9 @@ EOT;
             }
 
             if($tag && substr(strtolower($tag), 0, 1) == 'h' && is_numeric(substr($tag, 1, 1))) {
-                $this->outlineElems[count($this->outlineElems) - 1]['closed'] = true;
+                if(count($this->outlineElems)) {
+                    $this->outlineElems[count($this->outlineElems) - 1]['closed'] = true;
+                }
             }
 
             array_pop($this->structElemsStack);
@@ -7653,21 +7717,20 @@ EOT;
                 $before = substr($contents, 0, $lastPos);
                 $after = substr($contents, $lastPos);
 
-                // Match color/stroke lines in $after
-                preg_match_all('/^.*?\b(?:rg|RG|g|G|k|K)\b.*$/m', $after, $colorLines);
+                // Find all lines ending with a color/stroke operator
+                preg_match_all('/^.*\b(?:rg|RG|g|G|k|K)\b\s*$/m', $after, $colorMatches, PREG_OFFSET_CAPTURE);
 
-                // Extract color lines
-                $colorBlock = '';
-                if (!empty($colorLines[0])) {
-                    foreach ($colorLines[0] as $line) {
-                        // Remove from $after
-                        $after = str_replace($line . "\n", '', $after);
-                        $colorBlock .= $line . "\n";
-                    }
+                $colorLine = '';
+                if (!empty($colorMatches[0])) {
+                    $lastColor = end($colorMatches[0]);
+                    $colorLine = $lastColor[0];
+
+                    // Remove the color line (with newline if present)
+                    $after = preg_replace('/' . preg_quote($colorLine, '/') . '\R?/', '', $after, 1);
                 }
 
-                // Insert: before MCID + moved color lines
-                $contents = $before . $colorBlock . $insert . "\n" . $after;
+                // Assemble the result: move color before insert
+                $contents = $before . ($colorLine ? $colorLine . "\n" : '') . $insert . "\n" . $after;
             }
         }
 

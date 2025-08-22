@@ -663,7 +663,7 @@ abstract class AbstractRenderer
                 imagedestroy($bg);
             }
         } else {
-            $this->_canvas->image($tmpFile, $x, $y, $width, $height);
+            $this->_canvas->image($tmpFile, $x, $y, $width, $height, "normal", true);
         }
 
         $this->_canvas->clipping_end();

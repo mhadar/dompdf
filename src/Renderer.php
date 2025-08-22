@@ -143,6 +143,14 @@ class Renderer extends AbstractRenderer
                 [$x, $y, $w, $h] = $content_box;
                 $options['bbox'] = ['x' => $x, 'y' => $y, 'w' => $w, 'h' => $h];
             }
+            if(substr(strtolower($tagName), 0, 1) == 'h') {
+                $content_box = $frame->get_content_box();
+                [$x, $y, $w, $h] = $content_box;
+                $options['text'] = $frame->get_node()->nodeValue;
+                $options['x'] = $x;
+                $options['y'] = $y;
+                $options['size'] = $h;
+            }
 
             $this->_canvas->startTag($tagName, $options);
         }

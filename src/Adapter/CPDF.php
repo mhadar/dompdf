@@ -635,8 +635,9 @@ class CPDF implements Canvas
         return $filename;
     }
 
-    public function image($img, $x, $y, $w, $h, $resolution = "normal")
+    public function image($img, $x, $y, $w, $h, $resolution = "normal", $isBackground = false)
     {
+
         [$width, $height, $type] = Helpers::dompdf_getimagesize($img, $this->get_dompdf()->getHttpContext());
 
         $debug_png = $this->_dompdf->getOptions()->getDebugPng();
@@ -650,7 +651,7 @@ class CPDF implements Canvas
                 if ($debug_png) {
                     print '!!!jpg!!!';
                 }
-                $this->_pdf->addJpegFromFile($img, $x, $this->y($y) - $h, $w, $h);
+                $this->_pdf->addJpegFromFile($img, $x, $this->y($y) - $h, $w, $h, $isBackground);
                 break;
 
             case "webp":
@@ -669,13 +670,13 @@ class CPDF implements Canvas
             case "png":
                 if ($debug_png) print '!!!png!!!';
 
-                $this->_pdf->addPngFromFile($img, $x, $this->y($y) - $h, $w, $h);
+                $this->_pdf->addPngFromFile($img, $x, $this->y($y) - $h, $w, $h, $isBackground);
                 break;
 
             case "svg":
                 if ($debug_png) print '!!!SVG!!!';
 
-                $this->_pdf->addSvgFromFile($img, $x, $this->y($y) - $h, $w, $h);
+                $this->_pdf->addSvgFromFile($img, $x, $this->y($y) - $h, $w, $h, $isBackground);
                 break;
 
             default:
