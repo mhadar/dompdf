@@ -42,15 +42,18 @@ class Image extends Block
             $this->_canvas->startTag($tagName, $options);
         }
 
+        $wrapFigureContentInArtifact = $tagName === "Figure";
+
         // Render background & borders
         $this->_render_background($frame, $border_box);
         $this->_render_border($frame, $border_box);
         $this->_render_outline($frame, $border_box);
 
-
-        
-
         $src = $frame->get_image_url();
+
+        if ($wrapFigureContentInArtifact) {
+            $this->_canvas->startTag("Artifact");
+        }
 
         if (Cache::is_broken($src) && ($alt = $node->getAttribute("alt")) !== "") {
             $font = $style->font_family;
@@ -80,6 +83,10 @@ class Image extends Block
             if ($style->has_border_radius()) {
                 $this->_canvas->clipping_end();
             }
+        }
+
+        if ($wrapFigureContentInArtifact) {
+            $this->_canvas->endTag("Artifact");
         }
 
         $this->addNamedDest($node);

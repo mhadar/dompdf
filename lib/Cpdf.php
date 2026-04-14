@@ -65,6 +65,11 @@ class Cpdf
     public $outlineElems = [];
 
     /**
+     * @var array Previous tag state for explicit figure-image artifact wrappers
+     */
+    protected $figureArtifactTagStack = [];
+
+    /**
      * @var array This array contains all of the pdf objects, ready for final assembly
      */
     public $objects = [];
@@ -425,6 +430,11 @@ class Cpdf
      * @var string
      */
     protected $lastTagOpen = '';
+
+    /**
+     * @var boolean
+     */
+    protected $debug = false;
 
     /**
      * @var array The list of the core fonts
@@ -2215,13 +2225,13 @@ EOT;
                 break;
 
             case 'annot':
-                // add an annotation to this page
-                if (!isset($o['info']['annot'])) {
-                    $o['info']['annot'] = [];
-                }
+                // // add an annotation to this page
+                // if (!isset($o['info']['annot'])) {
+                //     $o['info']['annot'] = [];
+                // }
 
-                // $options should contain the id of the annotation dictionary
-                $o['info']['annot'][] = $options;
+                // // $options should contain the id of the annotation dictionary
+                // $o['info']['annot'][] = $options;
                 break;
 
             case 'out':
@@ -3298,8 +3308,46 @@ EOT;
                     $res = "\n$id 0 obj\n<</Type/StructTreeRoot";
                     $res .= "/K " . $info['kids'] . " 0 R";
                     $res .= "/ParentTree " . $info['parent'] . " 0 R";
+                    if (isset($info['idTree'])) {
+                        $res .= "/IDTree " . $info['idTree'] . " 0 R";
+                    }
                     $res .= ">>\nendobj";
                 }
+                return $res;
+        }
+
+        return null;
+    }
+
+    protected function o_id_tree($id, $action, $options = []): ?string
+    {
+        switch ($action) {
+            case 'new':
+                $id = ++$this->numObj;
+                $this->objects[$id] = ['t' => 'id_tree', 'info' => $options];
+                break;
+
+            case 'edit':
+                $this->objects[$id]['info'] = $options;
+                break;
+
+            case 'out':
+                $info = &$this->objects[$id]['info'];
+                if (empty($info['names'])) {
+                    return null;
+                }
+
+                ksort($info['names'], SORT_STRING);
+                $keys = array_keys($info['names']);
+
+                $res = "\n$id 0 obj\n<<";
+                $res .= " /Limits [(" . $this->filterText($keys[0], false, false) . ") (" . $this->filterText($keys[count($keys) - 1], false, false) . ")]";
+                $res .= " /Names [ ";
+                foreach ($info['names'] as $name => $objId) {
+                    $res .= "(" . $this->filterText($name, false, false) . ") " . $objId . " 0 R ";
+                }
+                $res .= "] >>\nendobj";
+
                 return $res;
         }
 
@@ -3323,18 +3371,42 @@ EOT;
                 $res = '';
                 if (count($info) > 0) {
                     $res = "\n$id 0 obj\n<</Type/StructElem";
-                    if(isset($info['mcid'])) {
-                        $res .= "/K<</Type/MCR/MCID " . $info['mcid'] . "/Pg " . $info['page'] . " 0 R>>";
-                    }
-                    if(isset($info['kids'])) {
+                    if(isset($info['mcid']) && isset($info['kids'])) {
+                        $res .= "/K[";
+                        foreach ($info['mcid'] as $mcid) {
+                            $res .= "<</Type/MCR/MCID " . $mcid . "/Pg " . $info['page'] . " 0 R>>";
+                        }
                         if(is_array($info['kids'])) {
-                            $res .= "/K " . '[' . implode(" ", array_map(function ($a) { return $a . ' 0 R'; }, $info['kids'])) . ']';
+                            $res .= implode(" ", array_map(function ($a) { return $a . ' 0 R'; }, $info['kids']));
                         } else {
-                            $res .= "/K " . $info['kids'];
+                            $res .= $info['kids'];
+                        }
+                        $res .= "]";
+                    } else {
+                        if(isset($info['mcid']) && count($info['mcid']) > 0) {
+                            if(count($info['mcid']) > 1) {
+                                $res .= "/K[";
+                                foreach ($info['mcid'] as $mcid) {
+                                    $res .= "<</Type/MCR/MCID " . $mcid . "/Pg " . $info['page'] . " 0 R>>";
+                                }
+                                $res .= "]";
+                            } else {
+                                $res .= "/K<</Type/MCR/MCID " . $info['mcid'][0] . "/Pg " . $info['page'] . " 0 R>>";
+                            }
+                        }
+                        if(isset($info['kids'])) {
+                            if(is_array($info['kids'])) {
+                                $res .= "/K " . '[' . implode(" ", array_map(function ($a) { return $a . ' 0 R'; }, $info['kids'])) . ']';
+                            } else {
+                                $res .= "/K " . $info['kids'];
+                            }
                         }
                     }
                     if(isset($info['alt']) && $info['alt']) {
                         $res .= "/Alt (" . $info['alt'] . ")";
+                    }
+                    if (isset($info['actualText']) && $info['actualText'] !== '') {
+                        $res .= "/ActualText (" . $info['actualText'] . ")";
                     }
                     if(isset($info['bbox'])) {
                         $res .= sprintf("/A <</Placement/Block/O/Layout/BBox[%.3F %.3F %.3F %.3F]>>", $info['bbox']['x'], $info['bbox']['y'], $info['bbox']['w'], $info['bbox']['h']);
@@ -3761,6 +3833,7 @@ EOT;
             // turn compression off
             $this->options['compression'] = false;
         }
+
         
         if($this->pdfa) {
 
@@ -3774,7 +3847,18 @@ EOT;
             $this->documentId = $this->numObj;
 
             $this->assignTableHeaders($this->structElems);
-            
+
+            foreach($this->objects as $objKey => $object) {
+                if($object['t'] == 'page') {
+
+                    $objId = $object['info']['contents'][0];
+                    $streamText = $this->objects[$objId]['c'];
+                    list($flattened, $nextMcid) = $this->flattenAndRenumberMcids($streamText, $objKey, -1);
+                    $this->objects[$objId]['c'] = $flattened;
+                    // $object['info']['mcid'] = $nextMcid;
+                }
+            }
+
             foreach($this->structElems as &$structElem) {
                 $parent = $this->documentId;
                 if($structElem['parent'] !== null) {
@@ -3800,18 +3884,41 @@ EOT;
                 $this->o_struct_elem($parent, 'edit', $parentOptions);
                 $structElem['num'] = $this->numObj;
             }
+            unset($structElem);
+
+            $idTreeNames = [];
+            foreach ($this->structElems as $structElem) {
+                if (isset($structElem['struct_id'], $structElem['num'])) {
+                    $idTreeNames[$structElem['struct_id']] = $structElem['num'];
+                }
+            }
+
+            $structTreeRootOptions = ['kids' => $this->documentId];
+            if ($idTreeNames) {
+                $this->o_id_tree($this->numObj, 'new', ['names' => $idTreeNames]);
+                $structTreeRootOptions['idTree'] = $this->numObj;
+            }
 
             $structElsPages = [];
             foreach($this->structElems as $k => $v) {
-                $structElsPages[$v['page']][$v['id']] = isset($v['mcid']) ? $v['num'] : null;
+                if(isset($v['mcid'])) {
+                    foreach($v['mcid'] as $mcid) {
+                        $structElsPages[$v['page']][$mcid] = $v['num'];
+                    }
+                }
+            }
+
+            foreach($structElsPages as $k => $v) {
+                $structElsPages[$k] = $this->sortAndFillKeys($v);
             }
 
             $this->o_nums($this->numObj, 'new', ['struct_elems' => $structElsPages]);
+            $structTreeRootOptions['parent'] = $this->numObj;
             
             $options = $this->objects[$this->documentId]['info'];
             $options['parent'] = $this->structTreeRootId;
             $this->o_struct_elem($this->documentId, 'edit', $options);
-            $this->o_struct_tree_root($this->structTreeRootId, 'edit', ['parent' => $this->numObj, 'kids' => $this->documentId]);
+            $this->o_struct_tree_root($this->structTreeRootId, 'edit', $structTreeRootOptions);
             
             foreach($this->outlineElems as $outlineElem) {
                 
@@ -3965,6 +4072,14 @@ EOT;
                 $tmp = 'o_' . $v['t'];
                 $this->$tmp($k, 'byterange', ['content' => &$content]);
             }
+        }
+
+        if($this->debug) {
+            echo "<pre>";
+            var_dump($this->structElems);
+            var_dump("OBJECTS", $this->objects);
+            var_dump("CONTENT", $content);
+            exit();
         }
 
         return $content;
@@ -4387,11 +4502,11 @@ EOT;
      */
     private function addContent($content, $beforeTag = false)
     {
-        if($beforeTag) {
-            $this->objects[$this->currentContents]['c'] = $this->insertBeforeLastMCID($this->objects[$this->currentContents]['c'], $content);
-        } else {
-            $this->objects[$this->currentContents]['c'] .= $content;
-        }
+        // if($beforeTag) {
+        //     $this->objects[$this->currentContents]['c'] = $this->insertBeforeLastMCID($this->objects[$this->currentContents]['c'], $content);
+        // } else {
+        // }
+        $this->objects[$this->currentContents]['c'] .= $content;
     }
 
     /**
@@ -5309,7 +5424,18 @@ EOT;
     function clippingRectangle($x1, $y1, $width, $height)
     {
         $this->save();
+
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
+        }
         $this->addContent(sprintf("\n%.3F %.3F %.3F %.3F re W n", $x1, $y1, $width, $height));
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
+        }
     }
 
     /**
@@ -5383,6 +5509,12 @@ EOT;
     {
         $this->save();
 
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\n/Artifact BMC");
+            }
+        }
+
         $this->addContent(sprintf("\n%.3F %.3F m ", $p[0], $p[1]));
 
         $n = count($p);
@@ -5391,6 +5523,12 @@ EOT;
         }
 
         $this->addContent("W n");
+
+        if($this->pdfa) {
+            if($this->lastTagOpen != 'Figure') {
+                $this->addContent("\nEMC");
+            }
+        }
     }
 
     /**
@@ -6002,10 +6140,10 @@ EOT;
             $part = $text; // OAR - Don't need this anymore, given that $start always equals zero.  substr($text, $start);
             $place_text = $this->filterText($part, false);
             // modify unicode text so that extra word spacing is manually implemented (bug #)
-            // if ($this->fonts[$this->currentFont]['isUnicode'] && $wordSpaceAdjust != 0) {
-            //     $space_scale = 1000 / $size;
-            //     $place_text = str_replace("\x00\x20", "\x00\x20)\x00\x20" . (-round($space_scale * $wordSpaceAdjust)) . "\x00\x20(", $place_text);
-            // }
+            if ($this->fonts[$this->currentFont]['isUnicode'] && $wordSpaceAdjust != 0) {
+                $space_scale = 1000 / $size;
+                $place_text = str_replace("\x00\x20", "\x00\x20)\x00\x20" . (-round($space_scale * $wordSpaceAdjust)) . "\x00\x20(", $place_text);
+            }
             $this->addContent(" /F$this->currentFontNum " . sprintf('%.1F Tf ', $size));
             $this->addContent(" [($place_text)] TJ");
         }
@@ -7500,6 +7638,10 @@ EOT;
             }
 
             if($tag == 'Artifact') {
+                if (!empty($options['figureImage'])) {
+                    $this->figureArtifactTagStack[] = $this->lastTagOpen;
+                    $this->lastTagOpen = 'Figure';
+                }
                 $this->addContent("\n/Artifact BMC");
                 return;
             }
@@ -7544,9 +7686,9 @@ EOT;
                 'closed' => false
             ];
 
-            if(!$noMcidTag) {
-                $elem['mcid'] = $numStructElem;
-            }
+            // if(!$noMcidTag) {
+            //     $elem['mcid'] = $numStructElem;
+            // }
 
             if (isset($options['placement'])) {
                 $elem['placement'] = $options['placement'];
@@ -7554,6 +7696,10 @@ EOT;
 
             if (isset($options['alt'])) {
                 $elem['alt'] = $options['alt'];
+            }
+
+            if (isset($options['actualText'])) {
+                $elem['actualText'] = $options['actualText'];
             }
 
             if (isset($options['bbox'])) {
@@ -7587,7 +7733,11 @@ EOT;
             }
 
             if($tag == 'Artifact') {
-                $this->lastTagOpen = '';
+                if (count($this->figureArtifactTagStack)) {
+                    $this->lastTagOpen = array_pop($this->figureArtifactTagStack);
+                } else {
+                    $this->lastTagOpen = '';
+                }
                 $this->addContent("\nEMC");
                 return;
             }
@@ -7704,36 +7854,166 @@ EOT;
         }
     }
 
-    private function insertBeforeLastMCID($contents, $insert) {
+    function flattenAndRenumberMcids(string $content, int $page, int $startMcid = -1): array
+    {
+        $structElems = &$this->structElems; // reference for direct modification
 
-        $pattern = '/\/\w+\s+<<\/MCID\s+\d+>>BDC/';
+        // Line-based tokens:
+        $re = '/
+            ^(?P<lead_bdc>\s*)\/(?P<tag_bdc>\S+)\s*<<\s*\/MCID\s+(?P<old_mcid>\d+)\s*>>\s*BDC\s*$ |
+            ^(?P<lead_bmc>\s*)\/(?P<tag_bmc>\S+)\s*BMC\s*$ |
+            ^(?P<lead_emc>\s*)EMC\s*$
+        /mx';
 
-        if (preg_match_all($pattern, $contents, $matches, PREG_OFFSET_CAPTURE)) {
-            $lastMatch = end($matches[0]);
-            $lastMatchString = $lastMatch[0];
-            $lastPos = strrpos($contents, $lastMatchString);
+        $out = '';
+        $pos = 0;
+        $mcid = $startMcid;
+        $current = null; // ['tag','type','lead']
+        $reopen  = [];   // stack
 
-            if ($lastPos !== false) {
-                $before = substr($contents, 0, $lastPos);
-                $after = substr($contents, $lastPos);
+        if (preg_match_all($re, $content, $toks, PREG_OFFSET_CAPTURE | PREG_SET_ORDER)) {
+            foreach ($toks as $t) {
+                $start = $t[0][1];
+                $text  = $t[0][0];
+                $out  .= substr($content, $pos, $start - $pos);
 
-                // Find all lines ending with a color/stroke operator
-                preg_match_all('/^.*\b(?:rg|RG|g|G|k|K)\b\s*$/m', $after, $colorMatches, PREG_OFFSET_CAPTURE);
+                $isBdc = !empty($t['tag_bdc'][0] ?? '');
+                $isBmc = !$isBdc && !empty($t['tag_bmc'][0] ?? '');
 
-                $colorLine = '';
-                if (!empty($colorMatches[0])) {
-                    $lastColor = end($colorMatches[0]);
-                    $colorLine = $lastColor[0];
+                if ($isBdc || $isBmc) {
+                    $tag     = $isBdc ? $t['tag_bdc'][0] : $t['tag_bmc'][0];
+                    $lead    = $isBdc ? ($t['lead_bdc'][0] ?? '') : ($t['lead_bmc'][0] ?? '');
+                    $type    = $isBdc ? 'BDC' : 'BMC';
+                    $oldMcid = $isBdc ? (int)$t['old_mcid'][0] : null;
 
-                    // Remove the color line (with newline if present)
-                    $after = preg_replace('/' . preg_quote($colorLine, '/') . '\R?/', '', $after, 1);
+                    if ($current) {
+                        $out .= $current['lead'] . "EMC\n";
+                        $reopen[] = $current;
+                    }
+
+                    if ($type === 'BDC') {
+                        $mcid++;
+                        foreach ($structElems as &$elem) {
+                            if (isset($elem['id']) && $elem['id'] == $oldMcid && $elem['page'] == $page) { // fallback by id
+                                $elem['mcid'][] = $mcid;
+                                break;
+                            }
+                        }
+                        unset($elem);
+
+                        $out .= $lead . "/$tag <</MCID $mcid>>BDC\n";
+                    } else {
+                        $out .= $lead . "/$tag BMC\n";
+                    }
+
+                    $current = ['tag' => $tag, 'type' => $type, 'lead' => $lead, 'oldMcid' => $oldMcid];
+                } else { // EMC
+                    $lead = $t['lead_emc'][0] ?? '';
+                    if ($current) {
+                        $out .= $current['lead'] . "EMC\n";
+                        $current = null;
+                    } else {
+                        $out .= $lead . "EMC\n";
+                    }
+
+                    if ($reopen) {
+                        $p = array_pop($reopen);
+                        if ($p['type'] === 'BDC') {
+                            $mcid++;
+                            // // update mapping again for reopened element if needed
+                            foreach ($structElems as &$elem) {
+                                if (isset($elem['id']) && $elem['id'] == $p['oldMcid'] && $elem['page'] == $page) {
+                                    $elem['mcid'][] = $mcid;
+                                    break;
+                                }
+                            }
+                            unset($elem);
+
+                            $out .= $p['lead'] . "/{$p['tag']} <</MCID $mcid>>BDC\n";
+                        } else {
+                            $out .= $p['lead'] . "/{$p['tag']} BMC\n";
+                        }
+                        $current = $p;
+                    }
                 }
-
-                // Assemble the result: move color before insert
-                $contents = $before . ($colorLine ? $colorLine . "\n" : '') . $insert . "\n" . $after;
+                $pos = $start + strlen($text);
             }
         }
 
-        return $contents;
+        $out .= substr($content, $pos);
+        if ($current) {
+            $out .= $current['lead'] . "EMC\n";
+        }
+
+        // ---------------------------
+        // Post-process cleanup
+        // ---------------------------
+
+        // Find all empty BDC wrappers before removing
+            if (preg_match_all(
+                '/^[ \t]*\/\S+[ \t]*<<[ \t]*\/MCID[ \t]+(?P<id>\d+)[ \t]*>>[ \t]*BDC[ \t]*\R(?:[ \t]*\R)*^[ \t]*EMC[ \t]*\R?/m',
+                $out,
+                $emptyMcidMatches
+            )) {
+                $emptyMcids = array_map('intval', $emptyMcidMatches['id']);
+
+                // remove these MCIDs from structElems
+                // foreach ($emptyMcids as $rmid) {
+                //     foreach ($structElems as &$elem) {
+                //         // case 2: array of mcids
+                //         if (isset($elem['mcid']) && is_array($elem['mcid'])) {
+                //             $elem['mcid'] = array_values(array_diff($elem['mcid'], [$rmid]));
+                //         }
+                //     }
+                //     unset($elem);
+                // }
+
+                // remove empty wrappers from output
+                $out = preg_replace(
+                    '/(^[ \t]*\/\S+[ \t]*<<[ \t]*\/MCID[ \t]+\d+[ \t]*>>[ \t]*BDC[ \t]*\R)(?:[ \t]*\R)*^[ \t]*EMC[ \t]*\R?/m',
+                    '',
+                    $out
+                );
+            }
+
+            // Remove empty BMC wrappers
+            $out = preg_replace(
+                '/(^[ \t]*\/\S+[ \t]*BMC[ \t]*\R)(?:[ \t]*\R)*^[ \t]*EMC[ \t]*\R?/m',
+                '',
+                $out
+            );
+
+            // Collapse duplicate EMC lines
+            $out = preg_replace(
+                '/^([ \t]*)EMC[ \t]*\R(?:^[ \t]*EMC[ \t]*\R)+/m',
+                "$1EMC\n",
+                $out
+            );
+
+            // 4) Remove empty / whitespace-only lines entirely
+            $out = preg_replace('/^[ \t]*\R/m', '', $out);
+
+            // Optional: reduce excessive blank lines
+            $out = preg_replace('/(?:^[ \t]*\R){3,}/m', "\n\n", $out);
+
+
+        return [$out, $mcid];
+    }
+
+    function sortAndFillKeys(array $arr): array {
+        if (empty($arr)) {
+            return [];
+        }
+
+        ksort($arr, SORT_NUMERIC);
+
+        $maxKey = max(array_keys($arr));
+
+        $filled = [];
+        for ($i = 0; $i <= $maxKey; $i++) {
+            $filled[$i] = $arr[$i] ?? null;
+        }
+
+        return $filled;
     }
 }

@@ -132,6 +132,9 @@ class Renderer extends AbstractRenderer
             $tagName = $frame->get_node()->getAttribute(self::TAGGED_PDF_ATTRIB);
             $options['colspan'] = max((int) $frame->get_node()->getAttribute("colspan"), 1);
             $options['rowspan'] = max((int) $frame->get_node()->getAttribute("rowspan"), 1);
+            if (in_array($tagName, ["Span", "TD", "Lbl"], true) && $frame->get_node()->hasAttribute("_actual-text")) {
+                $options['actualText'] = $frame->get_node()->getAttribute("_actual-text");
+            }
             if($frame->get_node()->hasAttribute('_placement')) {
                 $options['placement'] = $frame->get_node()->getAttribute('_placement');
             }
