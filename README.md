@@ -1,240 +1,191 @@
-Dompdf
-======
+Dompdf Accessibility Fork
+=========================
 
-[![Build Status](https://github.com/dompdf/dompdf/actions/workflows/test.yml/badge.svg)](https://github.com/dompdf/dompdf/actions/workflows/test.yml)
-[![PHP Versions Supported](https://poser.pugx.org/dompdf/dompdf/require/php)](https://packagist.org/packages/dompdf/dompdf)
-[![Latest Release](https://poser.pugx.org/dompdf/dompdf/v)](https://packagist.org/packages/dompdf/dompdf)
-[![Total Downloads](https://poser.pugx.org/dompdf/dompdf/downloads)](https://packagist.org/packages/dompdf/dompdf)
-[![License](https://poser.pugx.org/dompdf/dompdf/license)](https://packagist.org/packages/dompdf/dompdf)
- 
-**Dompdf is an HTML to PDF converter**
+[![Build Status](https://github.com/mhadar/dompdf/actions/workflows/test.yml/badge.svg)](https://github.com/mhadar/dompdf/actions/workflows/test.yml)
+[![PHP Versions Supported](https://poser.pugx.org/mhadar/dompdf/require/php)](https://packagist.org/packages/mhadar/dompdf)
+[![Latest Release](https://poser.pugx.org/mhadar/dompdf/v)](https://packagist.org/packages/mhadar/dompdf)
+[![Total Downloads](https://poser.pugx.org/mhadar/dompdf/downloads)](https://packagist.org/packages/mhadar/dompdf)
+[![License](https://poser.pugx.org/mhadar/dompdf/license)](https://packagist.org/packages/mhadar/dompdf)
 
-At its heart, dompdf is (mostly) a [CSS 2.1](http://www.w3.org/TR/CSS2/) compliant
-HTML layout and rendering engine written in PHP. It is a style-driven renderer:
-it will download and read external stylesheets, inline style tags, and the style
-attributes of individual HTML elements. It also supports most presentational
-HTML attributes.
+**`mhadar/dompdf` is a Dompdf fork focused on tagged, accessibility-oriented PDF output.**
 
-*This document applies to the latest stable code which may not reflect the current 
-release. For released code please
-[navigate to the appropriate tag](https://github.com/dompdf/dompdf/tags).*
+This repository starts from the upstream [dompdf/dompdf](https://github.com/dompdf/dompdf)
+HTML-to-PDF renderer and adds support for generating richer PDF metadata and
+structure needed by accessibility tooling such as PAC. The PHP namespace remains
+`Dompdf\...`, so existing application code can stay largely unchanged while you
+switch Composer/package sources to this fork.
 
-----
+This fork is intended for projects that need Dompdf-compatible rendering plus
+additional building blocks for accessible PDF output, including structure tags,
+document metadata, embedded fonts, and logical reading order data.
 
-**Check out the [demo](http://eclecticgeek.com/dompdf/debug.php) and ask any
-question on [StackOverflow](https://stackoverflow.com/questions/tagged/dompdf) or
-in [Discussions](https://github.com/dompdf/dompdf/discussions).**
+## Fork-specific additions
 
-Follow us on [![Twitter](http://twitter-badges.s3.amazonaws.com/twitter-a.png)](http://www.twitter.com/dompdf).
+- Tagged PDF support using the `_tag` HTML attribute to map source nodes to PDF structure roles.
+- Structure tree generation, including `StructTreeRoot`, `ParentTree`, and `IDTree` output.
+- Marked-content sequences (`MCID`) for tagged content.
+- Support for `alt` text and `_actual-text` values where the structure output supports them.
+- Metadata propagation from HTML, including `<title>`, `<meta name="author">`, `<meta name="keywords">`, `<meta name="description">`, and `<html lang>`.
+- PDF/A helper mode through `isPdfAEnabled`, including metadata/output-intent related output already implemented by the fork.
+- Font embedding support compatible with accessible/PAC-oriented workflows when the document uses embeddable fonts.
 
----
+## Notes about accessibility
 
+This fork gives you the PDF-side hooks required for accessibility-oriented
+output, but valid PAC/PDF accessibility results still depend on the input HTML,
+correct tagging, meaningful alternate text, document language, and using fonts
+that can be embedded. In other words, this fork helps generate the required PDF
+objects; it does not automatically turn arbitrary HTML into a fully compliant
+accessible PDF.
 
+## Core Dompdf features
 
-## Features
+- Handles most CSS 2.1 and a few CSS3 properties, including `@import`, `@media`, and `@page` rules.
+- Supports most presentational HTML 4.0 attributes.
+- Supports external stylesheets, either local or through HTTP/FTP via PHP stream wrappers.
+- Supports complex tables, including row and column spans, separate and collapsed border models, and individual cell styling.
+- Image support for GIF, PNG, BMP, JPEG, and basic SVG use cases.
+- No dependency on external PDF libraries when using the CPDF backend.
+- Inline PHP support.
 
- * Handles most CSS 2.1 and a few CSS3 properties, including @import, @media &
-   @page rules
- * Supports most presentational HTML 4.0 attributes
- * Supports external stylesheets, either local or through http/ftp (via
-   fopen-wrappers)
- * Supports complex tables, including row & column spans, separate & collapsed
-   border models, individual cell styling
- * Image support (gif, png (8, 24 and 32 bit with alpha channel), bmp & jpeg)
- * No dependencies on external PDF libraries, thanks to the R&OS PDF class
- * Inline PHP support
- * Basic SVG support (see "Limitations" below)
- 
 ## Requirements
 
- * PHP version 7.1 or higher
- * DOM extension
- * MBString extension
- * php-font-lib
- * php-svg-lib
- 
-Note that some required dependencies may have further dependencies 
-(notably php-svg-lib requires sabberworm/php-css-parser).
+- PHP 7.1 or higher
+- DOM extension
+- MBString extension
+- `dompdf/php-font-lib`
+- `dompdf/php-svg-lib`
+
+Some required dependencies have their own downstream dependencies.
 
 ### Recommendations
 
- * GD (for image processing)
-   * Additionally, the IMagick or GMagick extension improves image processing performance for certain image types
- * OPcache (OPcache, XCache, APC, etc.): improves performance
+- GD for image processing
+- Imagick or Gmagick to improve image-processing performance for some image types
+- OPcache for better runtime performance
 
-Visit the wiki for more information:
-https://github.com/dompdf/dompdf/wiki/Requirements
+## Fonts, metadata, and language
 
-## About Fonts & Character Encoding
+Accessible PDFs usually require embedded fonts, document metadata, and language
+information. This fork already reads and forwards several HTML-level signals:
 
-PDF documents internally support the following fonts: Helvetica, Times-Roman,
-Courier, Zapf-Dingbats, & Symbol. These fonts only support Windows ANSI
-encoding. In order for a PDF to display characters that are not available in
-Windows ANSI, you must supply an external font. Dompdf will embed any referenced
-font in the PDF so long as it has been pre-loaded or is accessible to dompdf and
-reference in CSS @font-face rules. See the
-[font overview](https://github.com/dompdf/dompdf/wiki/About-Fonts-and-Character-Encoding)
-for more information on how to use fonts.
+- `<title>` becomes the PDF title.
+- `<meta name="author">`, `<meta name="keywords">`, and `<meta name="description">` are mapped into PDF info/XMP fields.
+- `<html lang="...">` is forwarded as the document language.
 
-The [DejaVu TrueType fonts](https://dejavu-fonts.github.io/) have been pre-installed
-to give dompdf decent Unicode character coverage by default. To use the DejaVu
-fonts reference the font in your stylesheet, e.g. `body { font-family: DejaVu
-Sans; }` (for DejaVu Sans). The following DejaVu 2.34 fonts are available:
-DejaVu Sans, DejaVu Serif, and DejaVu Sans Mono.
+For non-Windows-ANSI text you still need to use a font with the required glyphs.
+Dompdf can embed referenced fonts as long as they are available to the renderer
+and declared with CSS `@font-face` rules or otherwise loaded by the font system.
 
-## Easy Installation
+## Installation
 
-### Install with composer
-
-To install with [Composer](https://getcomposer.org/), simply require the
-latest version of this package.
+### Install with Composer
 
 ```bash
-composer require dompdf/dompdf
+composer require mhadar/dompdf
 ```
 
-Make sure that the autoload file from Composer is loaded.
+Make sure your Composer autoloader is loaded early in your application:
 
 ```php
-// somewhere early in your project's loading, require the Composer autoloader
-// see: http://getcomposer.org/doc/00-intro.md
 require 'vendor/autoload.php';
 ```
 
-### Download and install
+### Download a packaged release
 
-Download a packaged archive of dompdf and extract it into the 
-directory where dompdf will reside
+Download a packaged archive from this fork's releases page:
 
- * You can download stable copies of dompdf from
-   https://github.com/dompdf/dompdf/releases
- * Or download a nightly (the latest, unreleased code) from
-   http://eclecticgeek.com/dompdf
+- https://github.com/mhadar/dompdf/releases
 
-Use the packaged release autoloader to load dompdf, libraries,
-and helper functions in your PHP:
+Packaged releases include the fork plus its dependencies and autoloader.
 
 ```php
-// include autoloader
 require_once 'dompdf/autoload.inc.php';
 ```
 
-Note: packaged releases are named according using semantic
-versioning (_dompdf_MAJOR-MINOR-PATCH.zip_). So the 1.0.0 
-release would be dompdf_1-0-0.zip. This is the only download
-that includes the autoloader for Dompdf and all its dependencies.
-
-### Install with git
-
-From the command line, switch to the directory where dompdf will
-reside and run the following commands:
+### Install from git
 
 ```sh
-git clone https://github.com/dompdf/dompdf.git
-cd dompdf/lib
-
-git clone https://github.com/PhenX/php-font-lib.git php-font-lib
-cd php-font-lib
-git checkout 0.5.1
-cd ..
-
-git clone https://github.com/PhenX/php-svg-lib.git php-svg-lib
-cd php-svg-lib
-git checkout v0.3.2
-cd ..
-
-git clone https://github.com/sabberworm/PHP-CSS-Parser.git php-css-parser
-cd php-css-parser
-git checkout 8.1.0
+git clone https://github.com/mhadar/dompdf.git
+cd dompdf
+composer install
 ```
 
-Require dompdf and it's dependencies in your PHP.
-For details see the [autoloader in the utils project](https://github.com/dompdf/utils/blob/master/autoload.inc.php).
-
-## Framework Integration
-
-* For Symfony: [nucleos/dompdf-bundle](https://github.com/nucleos/NucleosDompdfBundle)
-* For Laravel: [barryvdh/laravel-dompdf](https://github.com/barryvdh/laravel-dompdf)
-* For Redaxo: [PdfOut](https://github.com/FriendsOfREDAXO/pdfout)
-
-## Quick Start
-
-Just pass your HTML in to dompdf and stream the output:
-
-```php
-// reference the Dompdf namespace
-use Dompdf\Dompdf;
-
-// instantiate and use the dompdf class
-$dompdf = new Dompdf();
-$dompdf->loadHtml('hello world');
-
-// (Optional) Setup the paper size and orientation
-$dompdf->setPaper('A4', 'landscape');
-
-// Render the HTML as PDF
-$dompdf->render();
-
-// Output the generated PDF to Browser
-$dompdf->stream();
-```
-
-### Setting Options
-
-Set options during dompdf instantiation:
+## Quick start
 
 ```php
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
 $options = new Options();
-$options->set('defaultFont', 'Courier');
+$options->setIsPdfAEnabled(true);
+
 $dompdf = new Dompdf($options);
+
+$html = <<<'HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Accessible Example</title>
+  <meta name="author" content="Example App">
+  <meta name="description" content="Tagged PDF example">
+  <meta name="keywords" content="pdf, accessibility, tagged pdf">
+</head>
+<body _tag="Document">
+  <h1 _tag="H1">Account overview</h1>
+  <p _tag="P">This paragraph is part of the logical structure tree.</p>
+  <img _tag="Figure" src="logo.png" alt="Company logo">
+  <span _tag="Span" _actual-text="IBAN">AT12 3456 7890 1234 5678</span>
+</body>
+</html>
+HTML;
+
+$dompdf->loadHtml($html);
+$dompdf->setPaper('A4');
+$dompdf->render();
+$dompdf->stream('accessible.pdf');
 ```
 
-or at run time
+## Accessibility-oriented HTML attributes
 
-```php
-use Dompdf\Dompdf;
+This fork recognizes additional attributes that are useful for tagged PDF output:
 
-$dompdf = new Dompdf();
-$options = $dompdf->getOptions();
-$options->setDefaultFont('Courier');
-$dompdf->setOptions($options);
-```
+- `_tag`: sets the structure type written to the PDF for the element.
+- `_actual-text`: replacement text for supported tagged content such as `Span`, `TD`, and `Lbl`.
+- `alt`: alternate description used for figures where applicable.
+- `_placement`: optional placement hint forwarded into the structure data when present.
 
-See [Dompdf\Options](src/Options.php) for a list of available options.
+Use these attributes deliberately and keep the structure tree semantically
+correct. For example, prefer `H1`-`H6`, `P`, `L`, `LI`, `Lbl`, `LBody`, `Table`,
+`TR`, `TH`, `TD`, `Span`, `Figure`, and `Artifact` where they match the content.
 
-### Resource Reference Requirements
+## Resource reference requirements
 
-In order to protect potentially sensitive information Dompdf imposes 
-restrictions on files referenced from the local file system or the web. 
+To protect potentially sensitive information, Dompdf restricts local and remote
+resource loading.
 
 Files accessed through web-based protocols have the following requirements:
- * The Dompdf option "isRemoteEnabled" must be set to "true"
- * PHP must either have the curl extension enabled or the 
-   allow_url_fopen setting set to true
-   
+
+- The `isRemoteEnabled` option must be set to `true`.
+- PHP must either have the `curl` extension enabled or `allow_url_fopen` set to `true`.
+
 Files accessed through the local file system have the following requirement:
- * The file must fall within the path(s) specified for the Dompdf "chroot" option
 
-## Limitations (Known Issues)
+- The file must fall within the path(s) specified for the Dompdf `chroot` option.
 
- * Table cells are not pageable, meaning a table row must fit on a single page.
- * Elements are rendered on the active page when they are parsed.
- * Embedding "raw" SVG's (`<svg><path...></svg>`) isn't working yet, you need to
-   either link to an external SVG file, or use a DataURI like this:
-     ```php
-     $html = '<img src="data:image/svg+xml;base64,' . base64_encode($svg) . '" ...>';
-     ```
-     Watch https://github.com/dompdf/dompdf/issues/320 for progress
- * Does not support CSS flexbox.
- * Does not support CSS Grid.
- * A single Dompdf instance should not be used to render more than one HTML document
-   because persisted parsing and rendering artifacts can impact future renders.
----
+## Limitations and caveats
 
-[![Donate button](https://www.paypal.com/en_US/i/btn/btn_donate_SM.gif)](http://goo.gl/DSvWf)
+- Table cells are not pageable, so a table row must fit on a single page.
+- Elements are rendered on the active page when they are parsed.
+- Raw inline SVG support remains limited.
+- CSS flexbox is not supported.
+- CSS Grid is not supported.
+- A single Dompdf instance should not be used to render more than one HTML document because persisted parsing/rendering state can affect later renders.
+- `isPdfAEnabled` helps with metadata/output-intent related output, but font embedding and semantic tagging decisions are still up to the caller.
 
-*If you find this project useful, please consider making a donation.
-Any funds donated will be used to help further development on this project.)*
+## Upstream credit
+
+This fork is based on the upstream Dompdf project by the Dompdf community and
+continues to use the same LGPL-2.1 license. See [AUTHORS.md](AUTHORS.md) for
+upstream contributors.

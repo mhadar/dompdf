@@ -1,15 +1,35 @@
 {
     "name": "mhadar/dompdf",
     "type": "library",
-    "description": "DOMPDF is a CSS 2.1 compliant HTML to PDF converter",
-    "homepage": "https://github.com/dompdf/dompdf",
+    "description": "Accessibility-oriented Dompdf fork with tagged PDF and PDF metadata support",
+    "homepage": "https://github.com/mhadar/dompdf",
+    "keywords": [
+        "pdf",
+        "html",
+        "dompdf",
+        "tagged-pdf",
+        "accessibility",
+        "pdfa",
+        "pdf-ua"
+    ],
     "license": "LGPL-2.1",
     "authors": [
         {
+            "name": "mhadar",
+            "homepage": "https://github.com/mhadar",
+            "role": "Fork maintainer"
+        },
+        {
             "name": "The Dompdf Community",
-            "homepage": "https://github.com/dompdf/dompdf/blob/master/AUTHORS.md"
+            "homepage": "https://github.com/dompdf/dompdf/blob/master/AUTHORS.md",
+            "role": "Upstream authors"
         }
     ],
+    "support": {
+        "issues": "https://github.com/mhadar/dompdf/issues",
+        "source": "https://github.com/mhadar/dompdf",
+        "docs": "https://github.com/mhadar/dompdf#readme"
+    },
     "autoload": {
         "psr-4": {
             "Dompdf\\": "src/"

@@ -40,7 +40,7 @@ class Release
     {
         $this->checkPhpVersion();
         $composer = $this->getComposerCommand();
-        $tempDir = sys_get_temp_dir() . '/dompdf-release';
+        $tempDir = sys_get_temp_dir() . '/mhadar-dompdf-release';
 
         $buildDirectory = dirname(__DIR__) . "/build";
         if (!is_dir($buildDirectory)) {
@@ -51,15 +51,15 @@ class Release
         mkdir($tempDir);
         chdir($tempDir);
         $this->exec("$composer init --type project");
-        $this->exec("$composer require --fixed dompdf/dompdf");
+        $this->exec("$composer require --fixed mhadar/dompdf");
         $this->exec("rm composer.json composer.lock");
-        $this->exec("cp vendor/dompdf/dompdf/*.md vendor/dompdf/dompdf/LICENSE.LGPL vendor/dompdf/dompdf/VERSION .");
+        $this->exec("cp vendor/mhadar/dompdf/*.md vendor/mhadar/dompdf/LICENSE.LGPL vendor/mhadar/dompdf/VERSION .");
 
         file_put_contents($tempDir . '/autoload.inc.php', "<?php require (__DIR__ . '/vendor/autoload.php');");
 
         // Create zip
         $version = trim(file_get_contents($tempDir . '/VERSION'));
-        $destination = $buildDirectory . "/dompdf-$version.zip";
+        $destination = $buildDirectory . "/mhadar-dompdf-$version.zip";
         $this->zip($tempDir, $destination, 'dompdf');
 
         $this->exec("rm -rf $tempDir");
@@ -109,4 +109,3 @@ class Release
 
 $release = new Release();
 $release->create();
-
